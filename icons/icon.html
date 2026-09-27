@@ -1,0 +1,24 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+html,body{margin:0;background:transparent}
+.i{width:512px;height:512px;display:grid;place-items:center;
+ background:radial-gradient(120% 90% at 30% 15%,#FF9E6B 0%,#FF7A45 45%,#E2502A 100%);}
+.m .i{background:radial-gradient(120% 90% at 30% 15%,#FF9E6B 0%,#FF7A45 45%,#E2502A 100%)}
+svg{width:62%;height:62%}
+.m svg{width:48%;height:48%}
+</style></head><body class="">
+<div class="i"><svg viewBox="0 0 100 100">
+  <!-- vapeur -->
+  <g fill="none" stroke="#FFF4EC" stroke-width="5" stroke-linecap="round" opacity=".9">
+    <path d="M38 22c-4 5 4 8 0 13"/><path d="M50 16c-4 6 4 10 0 16"/><path d="M62 22c-4 5 4 8 0 13"/>
+  </g>
+  <!-- couvercle -->
+  <rect x="45" y="37" width="10" height="5" rx="2.5" fill="#FFF4EC"/>
+  <path d="M18 48c0-4 3-6 7-6h50c4 0 7 2 7 6z" fill="#FFF4EC"/>
+  <!-- marmite -->
+  <path d="M22 51h56v17c0 9-7 16-16 16H38c-9 0-16-7-16-16z" fill="#FFFFFF"/>
+  <rect x="10" y="55" width="14" height="6" rx="3" fill="#FFFFFF"/>
+  <rect x="76" y="55" width="14" height="6" rx="3" fill="#FFFFFF"/>
+  <path d="M30 60h40" stroke="#FFB08C" stroke-width="3" stroke-linecap="round"/>
+</svg></div>
+<script>if(location.hash==="#m")document.body.className="m"</script>
+</body></html>

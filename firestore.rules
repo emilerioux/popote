@@ -1,0 +1,13 @@
+rules_version = '2';
+
+// Un foyer = un document dont l'identifiant est un code secret de 24
+// caractères. On peut lire/écrire un foyer si on connaît son code,
+// mais personne ne peut lister les foyers ni en supprimer un.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /foyers/{code} {
+      allow get, create, update: if code.size() >= 20;
+      allow list, delete: if false;
+    }
+  }
+}
