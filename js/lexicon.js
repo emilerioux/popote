@@ -2,120 +2,173 @@
    lexicon.js — un seul nom par ingrédient, en français.
 
    « garlic », « 2 cloves garlic, minced » et « gousses d'ail »
-   doivent devenir la même ligne d'épicerie. canon() traduit les
-   termes anglais courants (l'expression la plus longue d'abord :
-   « garlic powder » avant « garlic ») puis enlève ce qui ne change
-   pas ce qu'on achète (« frais », « chopped », « large »…).
+   doivent devenir la même ligne d'épicerie. canon() :
+     1. regarde d'abord ce que tu as appris à l'app (alias) ;
+     2. repère les ingrédients connus en UNE passe, du plus long au
+        plus court (« garlic powder » avant « garlic ») — accents,
+        pluriels, tirets et « 35% / 35 % » ne comptent pas ;
+     3. retire ce qui ne change pas ce qu'on achète (« chopped »,
+        « frais »…), mais seulement AUTOUR des ingrédients reconnus :
+        « crème fraîche » reste de la crème fraîche.
 
-   Le nom canonique sert à la clé d'addition, au rayon, au
-   garde-manger, aux prix et à la recherche. Le texte de la recette,
-   lui, reste tel qu'on l'a écrit.
+   Le texte des recettes n'est jamais modifié : ce nom sert à la
+   liste d'épicerie, aux rayons, au garde-manger, aux prix et à la
+   recherche.
    ============================================================ */
 
-const EN_FR = [
-  /* Viandes et poissons */
-  ["ground beef", "bœuf haché"], ["ground pork", "porc haché"], ["ground turkey", "dinde hachée"],
-  ["ground chicken", "poulet haché"], ["chicken breast", "poitrine de poulet"],
-  ["chicken thigh", "cuisse de poulet"], ["chicken wing", "ailes de poulet"], ["chicken", "poulet"],
-  ["beef", "bœuf"], ["pork chop", "côtelette de porc"], ["pork tenderloin", "filet de porc"], ["pork", "porc"],
-  ["ham", "jambon"], ["sausage", "saucisse"], ["turkey", "dinde"], ["lamb", "agneau"], ["veal", "veau"],
-  ["salmon", "saumon"], ["shrimp", "crevettes"], ["prawn", "crevettes"], ["tuna", "thon"], ["cod", "morue"],
-  ["fish", "poisson"], ["egg", "œufs"],
+import { DICT, SYNONYMS } from "./lexicon-data.js";
 
-  /* Produits laitiers */
-  ["milk", "lait"], ["heavy cream", "crème 35 %"], ["whipping cream", "crème 35 %"],
-  ["cooking cream", "crème 15 %"], ["sour cream", "crème sure"], ["cream cheese", "fromage à la crème"],
-  ["cream", "crème"], ["butter", "beurre"], ["cheddar cheese", "cheddar"], ["parmesan cheese", "parmesan"],
-  ["parmigiano", "parmesan"], ["mozzarella cheese", "mozzarella"], ["feta cheese", "feta"],
-  ["monterey jack cheese", "fromage monterey jack"], ["monterey jack", "fromage monterey jack"],
-  ["cheese", "fromage"], ["greek yogurt", "yogourt grec"], ["yogurt", "yogourt"], ["yoghurt", "yogourt"],
+export const deacc = (s) => String(s || "").toLowerCase()
+  .replace(/œ/g, "oe").replace(/æ/g, "ae").replace(/[’`]/g, "'")
+  .normalize("NFD").replace(/[̀-ͯ]/g, "");
 
-  /* Fruits et légumes */
-  ["garlic powder", "ail en poudre"], ["onion powder", "oignon en poudre"],
-  ["garlic", "ail"], ["red onion", "oignon rouge"], ["yellow onion", "oignon"], ["white onion", "oignon"],
-  ["green onion", "oignons verts"], ["spring onion", "oignons verts"], ["scallion", "oignons verts"],
-  ["onion", "oignon"], ["shallot", "échalote"], ["leek", "poireau"], ["carrot", "carotte"],
-  ["celery", "céleri"], ["cherry tomato", "tomates cerises"], ["grape tomato", "tomates cerises"],
-  ["diced tomato", "tomates en dés"], ["crushed tomato", "tomates broyées"], ["canned tomato", "tomates en dés"],
-  ["tomato paste", "pâte de tomate"], ["tomato sauce", "sauce tomate"], ["tomato", "tomates"],
-  ["red bell pepper", "poivron rouge"], ["green bell pepper", "poivron vert"],
-  ["yellow bell pepper", "poivron jaune"], ["bell pepper", "poivron"], ["jalapeno", "jalapeño"],
-  ["broccoli", "brocoli"], ["cauliflower", "chou-fleur"], ["cabbage", "chou"], ["baby spinach", "épinards"],
-  ["spinach", "épinards"], ["kale", "chou kale"], ["romaine lettuce", "laitue romaine"], ["romaine", "laitue romaine"],
-  ["lettuce", "laitue"], ["cucumber", "concombre"], ["zucchini", "courgette"], ["mushroom", "champignons"],
-  ["sweet potato", "patate douce"], ["baby potato", "pommes de terre grelots"], ["potato", "pommes de terre"],
-  ["asparagus", "asperges"], ["green bean", "haricots verts"], ["snow pea", "pois mange-tout"],
-  ["frozen corn", "maïs surgelé"], ["corn", "maïs"], ["frozen pea", "petits pois surgelés"], ["pea", "petits pois"],
-  ["avocado", "avocat"], ["lemon", "citron"], ["apple", "pommes"], ["banana", "bananes"],
-  ["strawberries", "fraises"], ["strawberry", "fraises"], ["blueberries", "bleuets"], ["blueberry", "bleuets"],
-  ["raspberries", "framboises"], ["raspberry", "framboises"], ["ginger", "gingembre"],
-  ["cilantro", "coriandre"], ["coriander", "coriandre"], ["parsley", "persil"], ["basil", "basilic"],
-  ["mint", "menthe"], ["dill", "aneth"], ["thyme", "thym"], ["rosemary", "romarin"],
+/* ── Construction du dictionnaire ──────────────────────────── */
 
-  /* Épices et condiments */
-  ["extra virgin olive oil", "huile d'olive"], ["olive oil", "huile d'olive"],
-  ["vegetable oil", "huile végétale"], ["canola oil", "huile de canola"], ["sesame oil", "huile de sésame"],
-  ["oil", "huile"], ["salt and pepper", "sel et poivre"], ["kosher salt", "sel"], ["sea salt", "sel"], ["salt", "sel"],
-  ["black pepper", "poivre"], ["red pepper flake", "flocons de piment"], ["chili flake", "flocons de piment"],
-  ["pepper", "poivre"], ["smoked paprika", "paprika fumé"], ["chili powder", "assaisonnement au chili"],
-  ["oregano", "origan"], ["cinnamon", "cannelle"], ["nutmeg", "muscade"], ["turmeric", "curcuma"],
-  ["soy sauce", "sauce soya"], ["teriyaki sauce", "sauce teriyaki"], ["hot sauce", "sauce piquante"],
-  ["fish sauce", "sauce de poisson"], ["oyster sauce", "sauce aux huîtres"], ["hoisin sauce", "sauce hoisin"],
-  ["honey", "miel"], ["maple syrup", "sirop d'érable"], ["dijon mustard", "moutarde de dijon"],
-  ["mustard", "moutarde"], ["mayo", "mayonnaise"], ["rice vinegar", "vinaigre de riz"], ["vinegar", "vinaigre"],
-  ["vanilla extract", "vanille"], ["sesame seed", "graines de sésame"], ["curry paste", "pâte de cari"],
-  ["curry powder", "cari"], ["taco seasoning", "assaisonnement à tacos"], ["italian seasoning", "fines herbes italiennes"],
+const FOLD = { a: "[aàâä]", e: "[eéèêë]", i: "[iîï]", o: "[oôö]", u: "[uùûü]", c: "[cç]", y: "[yÿ]", n: "[nñ]" };
 
-  /* Épicerie */
-  ["all-purpose flour", "farine"], ["flour", "farine"], ["brown sugar", "cassonade"], ["sugar", "sucre"],
-  ["cornstarch", "fécule de maïs"], ["corn starch", "fécule de maïs"], ["baking powder", "poudre à pâte"],
-  ["baking soda", "bicarbonate de soude"], ["chicken broth", "bouillon de poulet"],
-  ["chicken stock", "bouillon de poulet"], ["beef broth", "bouillon de bœuf"], ["beef stock", "bouillon de bœuf"],
-  ["vegetable broth", "bouillon de légumes"], ["vegetable stock", "bouillon de légumes"],
-  ["broth", "bouillon"], ["stock", "bouillon"], ["coconut milk", "lait de coco"],
-  ["black bean", "haricots noirs"], ["red kidney bean", "haricots rouges"], ["kidney bean", "haricots rouges"],
-  ["chickpea", "pois chiches"], ["garbanzo bean", "pois chiches"], ["lentil", "lentilles"],
-  ["jasmine rice", "riz au jasmin"], ["basmati rice", "riz basmati"], ["brown rice", "riz brun"],
-  ["rice noodle", "nouilles de riz"], ["rice", "riz"], ["pasta", "pâtes"], ["noodle", "nouilles"],
-  ["breadcrumb", "chapelure"], ["panko", "chapelure"], ["flour tortilla", "tortillas"], ["corn tortilla", "tortillas de maïs"], ["tortilla", "tortillas"], ["naan", "pains naan"],
-  ["bread", "pain"], ["peanut butter", "beurre d'arachide"], ["oat", "gruau"],
-];
+function wordPat(w) {
+  /* Pluriel : on retire le s/x final, puis on l'accepte en option. */
+  const base = w.length > 3 && /[sx]$/.test(w) && !/(ss|us)$/.test(w) ? w.slice(0, -1) : w;
+  let out = "";
+  for (const ch of base) {
+    out += FOLD[ch] || (ch === "'" ? "['’]\\s*" : ch === "-" ? "[\\s\\-]?" : ch.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  }
+  return out + "(?:e?s|x)?";
+}
+const keyPat = (k) => deacc(k).trim().split(/\s+/).map(wordPat).join("[\\s\\-]*");
 
-/* Mots qui ne changent pas ce qu'on achète. « haché » reste pour la
-   viande (bœuf haché ≠ bœuf), et « petits » reste devant « pois ». */
+const ENTRIES = [];
+const byFr = new Map();
+
+for (const [aisle, text] of Object.entries(DICT)) {
+  for (const item of text.split(";")) {
+    const [ens, fr] = item.split("|").map((s) => s && s.trim().replace(/\s+/g, " "));
+    if (!ens || !fr) continue;
+    const names = ens.split("/").map((s) => s.trim()).filter(Boolean);
+    if (!byFr.has(fr)) byFr.set(fr, { fr, en: names[0], aisle });
+    const ref = byFr.get(fr);
+    for (const n of names) ENTRIES.push({ key: n, fr, en: ref.en, aisle: ref.aisle, lang: "en" });
+  }
+}
+/* Le nom français lui-même est une clé : « pains naan » reste
+   « pains naan » au lieu de devenir « pains pains naan ». */
+for (const ref of byFr.values()) ENTRIES.push({ key: ref.fr, fr: ref.fr, en: ref.en, aisle: ref.aisle, lang: "fr" });
+for (const item of SYNONYMS.split(";")) {
+  const [a, b] = item.split(">").map((s) => s && s.trim());
+  const ref = b && byFr.get(b);
+  if (a && ref) ENTRIES.push({ key: a, fr: ref.fr, en: ref.en, aisle: ref.aisle, lang: "fr" });
+}
+
+/* Un motif = une entrée (la première gagne), du plus long au plus court. */
+const seen = new Set();
+const LIST = ENTRIES
+  .map((e) => ({ ...e, pat: keyPat(e.key) }))
+  .filter((e) => !seen.has(e.pat) && seen.add(e.pat))
+  .sort((a, b) => deacc(b.key).length - deacc(a.key).length);
+for (const e of LIST) e.re = new RegExp(`^(?:${e.pat})$`, "iu");
+
+const BIG = new RegExp(`(^|[^\\p{L}\\d])(${LIST.map((e) => e.pat).join("|")})(?![\\p{L}])`, "giu");
+const findEntry = (m) => LIST.find((e) => e.re.test(m));
+
+export const dictionarySize = byFr.size;
+
+/* ── Ce qui ne change pas ce qu'on achète ──────────────────── */
+
 const STRIP = [
-  /\b(fresh|freshly|large|small|medium|big|chopped|finely|roughly|minced|diced|sliced|grated|shredded|peeled|boneless|skinless|cubed|crushed|ripe|optional|divided|packed|heaping|thinly|canned|raw|cooked|uncooked|dried|dry)\b/gi,
-  /(^|\s)(frais|fraîche|fraîches|fraîchement|gros|grosse|grosses|moyen|moyenne|moyennes|moyens|émincée?s?|tranchée?s?|râpée?s?|pelée?s?|finement|grossièrement|mûre?s?|facultatif|facultative|environ)(?=\s|$)/gi,
-  /(^|\s)petite?s?(?!\s+pois)(?=\s|$)/gi,
-  /\b(to taste|for garnish|for serving)\b/gi,
-  /(^|\s)(au goût|pour garnir|pour servir)(?=\s|$)/gi,
+  /(^|\s)(fresh|freshly|large|small|medium|big|extra-large|chopped|finely|roughly|coarsely|minced|diced|sliced|thinly|grated|shredded|peeled|boneless|skinless|cubed|crushed|ripe|optional|divided|packed|heaping|canned|raw|cooked|uncooked|ground|whole|organic|trimmed|halved|quartered|rinsed|drained|softened|melted|room temperature|leaves|leaf|sprigs?|stalks?|florets?|bunch|bunches|heads?|pieces?|seeded|stemmed|deveined|tails? on|tail-on)(?=\s|$)/gi,
+  /(^|\s)(frais|fraîche|fraîches|fraîchement|gros|grosse|grosses|moyen|moyens|moyenne|moyennes|émincée?s?|tranchée?s?|râpée?s?|pelée?s?|hachée?s?|coupée?s?|en dés|en cubes|en tranches|finement|grossièrement|mûre?s?|facultatif|facultative|environ|bio|biologique|entiers?|entières?|petite?s?|rincée?s?|égouttée?s?|ramollie?s?|fondue?s?|feuilles|brins?|branches?|tiges?|bouquets?|morceaux|épépinée?s?|décortiquée?s?)(?=\s|$)/gi,
+  /(^|\s)(to taste|for garnish|for serving|au goût|pour garnir|pour servir|or more|ou plus|at room temperature|à température ambiante)(?=\s|$)/gi,
 ];
+const FROZEN = /(^|\s)(frozen|surgelée?s?|congelée?s?)(?=\s|$)/i;
+const CONNECT = { and: "et", or: "ou", with: "avec", "&": "et" };
 
-const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-const RULES = [...EN_FR]
-  .sort((a, b) => b[0].length - a[0].length)
-  .map(([en, fr]) => [new RegExp(`(^|[^\\p{L}])${esc(en).replace(/[- ]/g, "[- ]?")}(?:e?s)?(?![\\p{L}])`, "giu"), fr]);
+/* ── Ce que tu as appris à l'app ───────────────────────────── */
 
+let ALIASES = {};
+let aliasSig = "{}";
 const cache = new Map();
 
-/* → { name: nom canonique en français, translated: vrai si de l'anglais a été traduit } */
+/* Clé d'alias : sans accents, sans pluriel, sans ponctuation. */
+export const aliasKey = (s) => deacc(s).replace(/[^a-z0-9' ]/g, " ").split(/\s+/).filter(Boolean)
+  .map((w) => (w.length > 3 ? w.replace(/[sx]$/, "") : w)).join(" ");
+
+export function setAliases(map) {
+  const sig = JSON.stringify(map || {});
+  if (sig === aliasSig) return;
+  aliasSig = sig; ALIASES = map || {}; cache.clear();
+}
+
+const stripAll = (s) => STRIP.reduce((acc, re) => acc.replace(re, " "), s).replace(/\s{2,}/g, " ").trim();
+
+function fromAlias(a) {
+  return { name: a.fr, en: a.en || "", aisle: a.aisle || null, translated: false, known: true, learned: true };
+}
+
+/* ── canon() ───────────────────────────────────────────────── */
+
+/* → { name, en, aisle, translated, known, learned } */
 export function canon(raw) {
-  const key = String(raw || "");
-  if (cache.has(key)) return cache.get(key);
-  let s = key.toLowerCase().replace(/’/g, "'")
+  const k = String(raw || "");
+  if (cache.has(k)) return cache.get(k);
+
+  let s = k.toLowerCase().replace(/œ/g, "oe").replace(/[’`]/g, "'")
     .replace(/\([^)]*\)/g, " ")          // « (environ 2 tasses) »
-    .split(/,|;| - | – /)[0];            // « oignon, haché » → « oignon »
-  const before = s;
-  for (const [re, fr] of RULES) s = s.replace(re, (_, pre) => `${pre}${fr}`);
-  /* « pains naan », « chou kale » : déjà en français, le mot anglais
-     reconnu ne doit pas doubler (« pains pains naan »). */
-  s = s.replace(/(^|\s)(\p{L}+)\s+\2(?=\s|$)/giu, "$1$2");
-  const translated = s !== before;
-  /* « haché » tombe partout, sauf après une viande. */
-  s = s.replace(/(^|\s)(?<!(bœuf|boeuf|porc|dinde|poulet|veau|viande)\s)hachée?s?(?=\s|$)/gi, " ");
-  for (const re of STRIP) s = s.replace(re, " ");
-  s = s.replace(/^(of|de|d')\s+/i, "").replace(/\s{2,}/g, " ").trim();
-  const out = { name: s || key.trim().toLowerCase(), translated };
-  cache.set(key, out);
+    .split(/,|;| - | – /)[0]             // « oignon, haché » → « oignon »
+    .replace(/\s{2,}/g, " ").trim();
+  const original = s;
+
+  const a1 = ALIASES[aliasKey(stripAll(s))] || ALIASES[aliasKey(s)];
+  if (a1) { const out = fromAlias(a1); cache.set(k, out); return out; }
+
+  /* 1. Ingrédients connus → jetons protégés. */
+  const hits = [];
+  s = s.replace(BIG, (m, pre, word) => {
+    const e = findEntry(word);
+    if (!e) return m;
+    hits.push(e);
+    return `${pre}\u0001${hits.length - 1}\u0002`;
+  });
+
+  /* 2. Autour des jetons : surgelé ? descriptifs ? petits mots anglais. */
+  const frozen = FROZEN.test(s);
+  s = s.replace(FROZEN, " ");
+  s = stripAll(s);
+  s = s.replace(/(^|\s)(and|or|with|&)(?=\s|$)/gi, (m, pre, w) => `${pre}${CONNECT[w.toLowerCase()]}`);
+
+  /* 3. On remet les noms français. */
+  s = s.replace(/\u0001(\d+)\u0002/g, (_, i) => hits[+i].fr)
+    .replace(/(^|\s)(\p{L}+)\s+\2(?=\s|$)/giu, "$1$2")
+    .replace(/^(of|de|du|des|d')\s+/i, "").replace(/\s+(et|ou|avec)$/i, "")
+    .replace(/\s{2,}/g, " ").trim();
+
+  const translated = hits.some((h) => h.lang === "en");
+  const main = hits.find((h) => h.fr === s) || null;
+  const longest = hits.slice().sort((a, b) => b.key.length - a.key.length)[0];
+  let name = s || original;
+  let en = main ? main.en : translated ? stripAll(original) : "";
+  let aisle = main ? main.aisle : longest ? longest.aisle : null;
+  if (frozen && !/surgel/.test(name)) {
+    name = `${name} surgelés`; aisle = "surgeles"; en = en ? `frozen ${en}` : "";
+  }
+
+  const a2 = ALIASES[aliasKey(name)];
+  const out = a2 ? fromAlias(a2) : { name, en, aisle, translated, known: !!main, learned: false };
+  cache.set(k, out);
   return out;
+}
+
+/* ── Nom anglais affiché ───────────────────────────────────────
+   Le dictionnaire garde l'anglais au singulier ; si le français est
+   au pluriel (« carottes »), on accorde (« carrots »), sauf pour ce
+   qui ne se compte pas (« shrimp », « rice »…). */
+const UNCOUNTABLE = /(shrimp|fish|rice|garlic|broccoli|broccolini|spinach|corn|kale|celery|parsley|cilantro|basil|mint|dill|thyme|rosemary|sage|lettuce|cheese|bread|pasta|flour|sugar|salt|pepper|asparagus|hummus|tofu|salmon|beef|pork|chicken|milk|cream|butter|yogurt|oil|sauce|chocolate|coffee|tea|water|ice|bacon|ham|arugula|watercress|couscous|quinoa|oat|granola|popcorn|salsa|pesto|honey|syrup|vinegar|ketchup|mayo|mustard|spaghetti|linguine|penne|macaroni|fusilli|orzo|gnocchi|ramen|udon|soba|kimchi|sauerkraut|seaweed|squid|octopus|lamb|veal|turkey|duck|jam|tahini|miso|cumin|paprika|cinnamon|nutmeg|turmeric|oregano|yeast|cocoa|lox|edamame|tempeh|seitan|barley|bulgur|farro|panko|naan|pita|feta|ricotta|mozzarella|parmesan|cheddar|mesclun|greens|spring mix|stock|broth|flakes|powder|seasoning|spice)$/i;
+
+export function enLabel(fr, en) {
+  if (!en) return "";
+  const first = deacc(fr).split(" ")[0];
+  const last = en.split(" ").pop();
+  if (!/[sx]$/.test(first) || /s$/.test(last) || UNCOUNTABLE.test(last)) return en;
+  const plural = /[^aeiou]y$/.test(last) ? last.slice(0, -1) + "ies"
+    : /(o|ch|sh|x)$/.test(last) ? last + "es" : last + "s";
+  return en.replace(/\S+$/, plural);
 }

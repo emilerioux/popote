@@ -8,6 +8,7 @@
      checked  clé d'article → true   (cases cochées à l'épicerie)
      pantry   clé d'ingrédient → { name }   (toujours à la maison)
      prices   clé d'ingrédient → { u: unité de base, p: prix unitaire }
+     aliases  nom normalisé → { fr, en, aisle }   (ce que tu as appris à l'app)
 
    Toute modification passe par set(col, key, value) : une clé à la
    fois. C'est ce qui permet à la synchro de n'envoyer QUE le champ
@@ -18,11 +19,11 @@
 import { STARTERS } from "./data.js";
 
 const KEY = "pp-state";
-const COLS = ["recipes", "plan", "extras", "checked", "pantry", "prices"];
+const COLS = ["recipes", "plan", "extras", "checked", "pantry", "prices", "aliases"];
 const listeners = new Set();
 let pushHook = null;
 
-const blank = () => ({ recipes: {}, plan: {}, extras: {}, checked: {}, pantry: {}, prices: {} });
+const blank = () => ({ recipes: {}, plan: {}, extras: {}, checked: {}, pantry: {}, prices: {}, aliases: {} });
 
 function clean(s) {
   const out = blank();

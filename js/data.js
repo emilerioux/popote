@@ -7,7 +7,7 @@
    les règles de lecture s'améliorent.
    ============================================================ */
 
-import { canon } from "./lexicon.js";
+import { canon, enLabel, aliasKey, setAliases, deacc } from "./lexicon.js";
 
 /* ── Dates ─────────────────────────────────────────────────── */
 
@@ -100,7 +100,9 @@ export const deaccent = (s) =>
 /* Le rayon se devine sur le nom canonique (« garlic » → « ail »),
    puis sur le texte d'origine si le canonique ne dit rien. */
 export function guessAisle(name) {
-  const a = aisleOf(canon(name).name);
+  const c = canon(name);
+  if (c.aisle) return c.aisle;               // le dictionnaire (ou toi) le sait
+  const a = aisleOf(c.name);
   return a === "autre" ? aisleOf(name) : a;
 }
 
@@ -139,7 +141,8 @@ const UNITS = [
   [/^sachets?(?=\s|$)/i, "sachet", "sachets"],
   [/^(pincées?|pinch(es)?)(?=\s|$)/i, "pincée", "pincées"],
   [/^(tranches?|slices?)(?=\s|$)/i, "tranche", "tranches"],
-  [/^bottes?(?=\s|$)/i, "botte", "bottes"],
+  [/^(bottes?|bunch(es)?)(?=\s|$)/i, "botte", "bottes"],
+  [/^(têtes?|heads?)(?=\s+(de|d'|d’|of)?)/i, "tête", "têtes"],
   [/^casseaux?(?=\s|$)/i, "casseau", "casseaux"],
   [/^filets?(?=\s+(de|d'|d’))/i, "filet", "filets"],
   [/^pots?(?=\s+(de|d'|d’))/i, "pot", "pots"],
@@ -196,7 +199,7 @@ function toBase(ing) {
 }
 
 /* En magasin on achète des objets entiers : 1 ½ oignon → 2. */
-const WHOLE = new Set(["", "boîte", "gousse", "paquet", "sachet", "tranche", "botte", "casseau", "filet", "pot"]);
+const WHOLE = new Set(["", "boîte", "gousse", "paquet", "sachet", "tranche", "botte", "casseau", "filet", "pot", "tête"]);
 
 /* Clé d'addition : nom canonique (anglais → français, sans « frais »,
    « chopped »…), sans accents, sans « s » final.
@@ -207,7 +210,13 @@ export const keyOf = (name) =>
 
 /* Nom affiché à l'épicerie : le canonique, pour une liste d'une seule langue. */
 export const displayName = (name) => canon(name).name;
-export { canon };
+/* Nom anglais à montrer à côté du français, s'il dit autre chose. */
+export function englishOf(name) {
+  const c = canon(name);
+  const en = enLabel(c.name, c.en);
+  return en && deacc(en) !== deacc(c.name) ? en : "";
+}
+export { canon, aliasKey, setAliases };
 
 /* ── Affichage des quantités ───────────────────────────────── */
 
@@ -270,10 +279,11 @@ export function groceryFor(state, mon) {
       const k = keyOf(ing.name) + "|" + b.unit;
       let it = items.get(k);
       if (!it) {
-        it = { key: `${wk}|${k}`, k: keyOf(ing.name), name: displayName(ing.name), unit: b.unit, qty: 0, hasQty: false,
-               from: new Set(), aisle: guessAisle(ing.name) };
+        it = { key: `${wk}|${k}`, k: keyOf(ing.name), name: displayName(ing.name), en: englishOf(ing.name),
+               unit: b.unit, qty: 0, hasQty: false, from: new Set(), sources: new Set(), aisle: guessAisle(ing.name) };
         items.set(k, it);
       }
+      it.sources.add(ing.name);
       if (b.qty !== null) { it.qty += b.qty * f; it.hasQty = true; }
       it.from.add(r.name);
     }
@@ -297,23 +307,48 @@ export function groceryFor(state, mon) {
     }
     const first = group.find((it) => it.unit === "ml") || group[0];
     items.set(`${first.k}|ml`, { ...first, key: `${wk}|${first.k}|ml`, unit: "ml", qty: ml, hasQty: has,
-                                 from: new Set(group.flatMap((it) => [...it.from])) });
+                                 from: new Set(group.flatMap((it) => [...it.from])),
+                                 sources: new Set(group.flatMap((it) => [...it.sources])) });
   }
 
-  const list = [...items.values()].map((it) => ({ ...it, from: [...it.from] }));
+  /* Même ingrédient en unités qui ne se convertissent pas (200 g de riz
+     + 1 tasse de riz) : une seule ligne « 200 g + 1 tasse ». */
+  const byKey = new Map();
+  for (const it of items.values()) {
+    if (!byKey.has(it.k)) byKey.set(it.k, []);
+    byKey.get(it.k).push(it);
+  }
+  for (const group of byKey.values()) {
+    if (group.length < 2) continue;
+    for (const it of group) items.delete(`${it.k}|${it.unit}`);
+    const main = group.find((it) => it.hasQty) || group[0];
+    items.set(`${main.k}|mix`, { ...main, key: `${wk}|${main.k}|mix`,
+      parts: group.map((it) => ({ qty: it.qty, unit: it.unit, hasQty: it.hasQty })),
+      from: new Set(group.flatMap((it) => [...it.from])), sources: new Set(group.flatMap((it) => [...it.sources])) });
+  }
+
+  const list = [...items.values()].map((it) => ({ ...it, from: [...it.from], sources: [...it.sources] }));
   for (const [id, x] of Object.entries(state.extras || {})) {
     const ing = toBase(parseLine(x.line));
-    list.push({ key: `x|${id}`, k: keyOf(ing.name || x.line), extra: id, name: displayName(ing.name || x.line), unit: ing.unit,
-                qty: ing.qty ?? 0, hasQty: ing.qty !== null, from: [], aisle: guessAisle(ing.name || x.line) });
+    const nm = ing.name || x.line;
+    list.push({ key: `x|${id}`, k: keyOf(nm), extra: id, name: displayName(nm), en: englishOf(nm), unit: ing.unit,
+                qty: ing.qty ?? 0, hasQty: ing.qty !== null, from: [], sources: [nm], aisle: guessAisle(nm) });
   }
 
   let done = 0, total = 0, budget = 0, unpriced = 0;
   const pantry = [];
   for (const it of list) {
     it.done = !!state.checked[it.key];
-    if (it.hasQty && WHOLE.has(it.unit)) it.qty = Math.ceil(it.qty - 0.01);
-    it.qtyText = it.hasQty ? formatQty(it.qty, it.unit) : "";
-    it.price = priceOf(state, it);
+    if (it.parts) {
+      for (const p of it.parts) if (p.hasQty && WHOLE.has(p.unit)) p.qty = Math.ceil(p.qty - 0.01);
+      it.qtyText = it.parts.filter((p) => p.hasQty).map((p) => formatQty(p.qty, p.unit)).join(" + ");
+      const known = it.parts.map((p) => priceOf(state, { ...it, ...p })).filter((x) => x !== null);
+      it.price = known.length ? known.reduce((a, b) => a + b, 0) : null;
+    } else {
+      if (it.hasQty && WHOLE.has(it.unit)) it.qty = Math.ceil(it.qty - 0.01);
+      it.qtyText = it.hasQty ? formatQty(it.qty, it.unit) : "";
+      it.price = priceOf(state, it);
+    }
     /* Garde-manger : ce qu'on a toujours sort de la liste — sauf les
        articles ajoutés à la main, qui sont là parce qu'on en manque. */
     it.pantry = !it.extra && !!(state.pantry || {})[it.k];

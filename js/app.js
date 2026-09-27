@@ -10,7 +10,8 @@ import * as sync from "./sync.js";
 import * as photos from "./photos.js";
 import { DAYS, mondayOf, addDays, iso, shortDate, parseLine, guessAisle, scaleLine,
          groceryFor, AISLES, TAGS, FILTERS, tagsOf, matchesFilter, suggest, money,
-         unitPrice, guessEmoji, canon } from "./data.js";
+         unitPrice, guessEmoji, canon, keyOf, aliasKey, setAliases } from "./data.js";
+import { dictionarySize } from "./lexicon.js";
 import { parseRecipeText } from "./import.js";
 import { openCook } from "./cook.js";
 import { pop, buzz } from "./motion.js";
@@ -345,9 +346,7 @@ function openRecipe(id, { day } = {}) {
       $("#rd-inc", el).disabled = n >= MAX_PORTIONS;
       $("#rd-ing", el).innerHTML = (r.ingredients || []).map((l) => {
         const aisle = AISLES.find((a) => a.id === guessAisle(parseLine(l).name));
-        /* Ligne en anglais : on montre sous quel nom elle ira à l'épicerie. */
-        const c = canon(parseLine(l).name);
-        return `<li><span class="ing-dot" title="${esc(aisle.name)}">${aisle.emoji}</span><span class="ing-text">${esc(scaleLine(l, n / base))}${c.translated ? `<small class="ing-fr">${esc(c.name)}</small>` : ""}</span></li>`;
+        return `<li><span class="ing-dot" title="${esc(aisle.name)}">${aisle.emoji}</span>${esc(scaleLine(l, n / base))}</li>`;
       }).join("");
     };
     draw();
@@ -553,7 +552,7 @@ function openEditor(id, { planOn, draft } = {}) {
       const ls = lines(ing.value);
       $("#ed-prev", el).innerHTML = ls.length ? ls.map((l) => {
         const p = parseLine(l), a = AISLES.find((x) => x.id === guessAisle(p.name));
-        return `<span class="prev-chip" title="${esc(a.name)}">${a.emoji} ${esc(p.name ? canon(p.name).name : l)}</span>`;
+        return `<span class="prev-chip" title="${esc(a.name)}">${a.emoji} ${esc(p.name || l)}</span>`;
       }).join("") : "";
     };
     validate(); preview();
@@ -636,7 +635,7 @@ function groceryRow(it) {
       <button class="g-main" data-key="${esc(it.key)}" aria-pressed="${it.done}">
         <span class="check" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg></span>
         <span class="g-text">
-          <b>${esc(it.name)}</b>
+          <b>${esc(it.name)}${it.en ? ` <span class="g-en">· ${esc(it.en)}</span>` : ""}</b>
           ${it.from.length ? `<small>${esc(it.from.join(" · "))}</small>` : `<small>Ajouté à la main</small>`}
         </span>
       </button>
@@ -713,7 +712,7 @@ $("#groc-list").addEventListener("click", (e) => {
     return;
   }
   const price = e.target.closest("[data-price]");
-  if (price) { const it = findItem(price.dataset.price); if (it) openPrice(it); return; }
+  if (price) { const it = findItem(price.dataset.price); if (it) openItem(it); return; }
   if (e.target.closest("#pantry-toggle")) { pantryOpen = !pantryOpen; renderGrocery(); return; }
   const un = e.target.closest("[data-unpantry]");
   if (un) {
@@ -763,55 +762,121 @@ $("#groc-share").addEventListener("click", async () => {
 
 $("#groc-pantry").addEventListener("click", () => openPantry());
 
-/* ── Feuille : prix d'un article ──
-   On demande le prix comme on le lit en magasin (au kilo, au litre,
-   à l'unité), et on le garde par unité de base. */
-function openPrice(it) {
+/* ── Feuille : un article de la liste ──
+   Deux choses qu'on y fait :
+   · lui apprendre son nom (français, anglais) et son rayon, ou dire
+     « c'est la même chose que… » — l'app s'en souvient pour toujours,
+     pour toutes les façons dont il a été écrit ;
+   · son prix, demandé comme on le lit en magasin (au kilo, au litre,
+     à l'unité) et gardé par unité de base. */
+function openItem(it) {
   const per = it.unit === "g" ? { label: "le kilo", k: 1000 }
             : it.unit === "ml" ? { label: "le litre", k: 1000 }
             : it.unit ? { label: `${/^(boîte|gousse|pincée|tranche|botte|c\. )/.test(it.unit) ? "la" : "le"} ${it.unit}`, k: 1 }
             : { label: "l'unité", k: 1 };
   const up = unitPrice(S(), it.k);
-  const cur = up && up.u === it.unit ? up.p * per.k : "";
+  const cur = up && up.u === it.unit ? Math.round(up.p * per.k * 100) / 100 : "";
   const mine = !!S().prices[it.k];
+  const g = groceryFor(S(), week);
+  const seenK = new Set([it.k]);
+  const others = [...g.groups.flatMap((x) => x.items), ...g.pantry]
+    .filter((o) => !seenK.has(o.k) && seenK.add(o.k))
+    .sort((a, b) => a.name.localeCompare(b.name, "fr"));
+  let aisle = it.aisle;
+
   openSheet(`
     <div class="sheet-head">
       <button class="head-btn" data-close>Annuler</button>
-      <span class="sheet-title">Prix</span>
-      <button class="head-btn strong" id="pr-save">OK</button>
+      <span class="sheet-title">Article</span>
+      <button class="head-btn strong" id="it-save">OK</button>
     </div>
     <div class="sheet-body">
-      <p class="sheet-sub"><b>${esc(it.name[0].toUpperCase() + it.name.slice(1))}</b>${it.qtyText ? ` · ${esc(it.qtyText)} cette semaine` : ""}</p>
-      ${!it.hasQty && !it.unit ? `<p class="note">Pas de quantité dans la recette pour cet article : le prix sera compté une fois.</p>` : ""}
+      <p class="sheet-sub">${it.qtyText ? `${esc(it.qtyText)} cette semaine` : "Cette semaine"}${it.from.length ? ` · ${esc(it.from.join(", "))}` : ""}</p>
+      ${it.sources.some((s) => deaccTxt(s) !== deaccTxt(it.name)) ? `<p class="note">Écrit dans tes recettes : ${it.sources.map((s) => `« ${esc(s)} »`).join(", ")}</p>` : ""}
+
+      <div class="field-row">
+        <label class="field"><span>Nom français</span>
+          <input id="it-fr" value="${esc(it.name)}" autocomplete="off" autocapitalize="none">
+        </label>
+        <label class="field"><span>Nom anglais</span>
+          <input id="it-en" value="${esc(it.en || "")}" placeholder="ex. shrimp" autocomplete="off" autocapitalize="none">
+        </label>
+      </div>
+
+      <div class="field"><span>Rayon</span>
+        <div class="filters wrap" id="it-aisle">${AISLES.map((a) =>
+          `<button type="button" class="fchip${a.id === aisle ? " on" : ""}" data-aisle="${a.id}">${a.emoji} ${a.name}</button>`).join("")}
+        </div>
+      </div>
+
+      ${others.length ? `
+      <div class="field"><span>C'est la même chose que…</span>
+        <div class="filters" id="it-same">${others.map((o) =>
+          `<button type="button" class="fchip" data-k="${esc(o.k)}">${esc(o.name)}</button>`).join("")}
+        </div>
+      </div>` : ""}
+
       <label class="field price-field"><span>Prix pour ${per.label}</span>
-        <span class="money-input"><input id="pr-val" type="number" inputmode="decimal" step="0.01" min="0" value="${cur ? (Math.round(cur * 100) / 100) : ""}" placeholder="0,00" autofocus><b>$</b></span>
+        <span class="money-input"><input id="pr-val" type="number" inputmode="decimal" step="0.01" min="0" value="${cur}" placeholder="0,00"><b>$</b></span>
       </label>
       <p class="note" id="pr-est"></p>
+      ${!it.hasQty && !it.unit ? `<p class="note">Pas de quantité dans la recette : le prix est compté une fois.</p>` : ""}
       ${up && !mine ? `<p class="note">Prix de départ approximatif — corrige-le avec ce que tu paies vraiment.</p>` : ""}
       ${mine ? `<button class="ghost-btn danger wide" id="pr-clear">Revenir au prix par défaut</button>` : ""}
     </div>`, (el) => {
-    const input = $("#pr-val", el);
+    const fr = $("#it-fr", el), en = $("#it-en", el), price = $("#pr-val", el);
     const qty = it.hasQty ? it.qty : 1;
     const est = () => {
-      const v = parseFloat(String(input.value).replace(",", "."));
+      const v = parseFloat(String(price.value).replace(",", "."));
       $("#pr-est", el).textContent = v > 0 ? `Pour cette semaine : ≈ ${money((v / per.k) * qty)}` : "";
     };
     est();
-    input.addEventListener("input", est);
-    const save = () => {
-      const v = parseFloat(String(input.value).replace(",", "."));
-      if (!(v >= 0)) { closeSheet(); return; }
-      /* Un article sans quantité (« sel ») : prix à l'unité, quantité 1. */
-      const u = !it.hasQty && !it.unit ? "" : it.unit;
-      store.set("prices", it.k, { u, p: v / per.k });
-      closeSheet();
-      toast("Prix enregistré");
+    price.addEventListener("input", est);
+
+    const pickAisle = (id) => {
+      aisle = id;
+      $$("#it-aisle [data-aisle]", el).forEach((b) => b.classList.toggle("on", b.dataset.aisle === id));
     };
-    $("#pr-save", el).addEventListener("click", save);
-    input.addEventListener("keydown", (e) => { if (e.key === "Enter") save(); });
+    $("#it-aisle", el).addEventListener("click", (e) => {
+      const b = e.target.closest("[data-aisle]");
+      if (b) { pickAisle(b.dataset.aisle); pop(b, 1.08, 0.55); }
+    });
+    $("#it-same", el)?.addEventListener("click", (e) => {
+      const b = e.target.closest("[data-k]");
+      if (!b) return;
+      const o = others.find((x) => x.k === b.dataset.k);
+      fr.value = o.name; en.value = o.en || ""; pickAisle(o.aisle);
+      $$("#it-same .fchip", el).forEach((x) => x.classList.toggle("on", x === b));
+      pop(fr, 1.03, 0.6); buzz(8);
+    });
+
+    const clean = (s) => s.trim().toLowerCase().replace(/\s+/g, " ");
+    $("#it-save", el).addEventListener("click", () => {
+      const f = clean(fr.value), n = clean(en.value);
+      const ops = [];
+      let k = it.k;
+      const learn = f && (f !== it.name || n !== (it.en || "") || aisle !== it.aisle);
+      if (learn) {
+        /* Toutes les façons dont il a été écrit mènent au même nom. */
+        const val = n ? { fr: f, en: n, aisle } : { fr: f, aisle };
+        const keys = new Set([...it.sources, it.name, f, n].filter(Boolean).map(aliasKey));
+        for (const key of keys) ops.push(["aliases", key, val]);
+        setAliases({ ...S().aliases, ...Object.fromEntries(ops.map(([, key, v]) => [key, v])) });
+        k = keyOf(f);
+      }
+      const v = parseFloat(String(price.value).replace(",", "."));
+      if (v >= 0 && (String(v) !== String(cur) || k !== it.k)) {
+        ops.push(["prices", k, { u: !it.hasQty && !it.unit ? "" : it.unit, p: v / per.k }]);
+      }
+      closeSheet();
+      if (!ops.length) return;
+      store.apply(ops);
+      toast(learn ? `Appris : « ${f} »${n ? ` = « ${n} »` : ""}` : "Prix enregistré");
+    });
     $("#pr-clear", el)?.addEventListener("click", () => { store.set("prices", it.k, undefined); closeSheet(); });
   });
 }
+const deaccTxt = (s) => String(s).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
 
 /* ── Feuille : garde-manger ──
    Tout ce que la semaine demande, avec un interrupteur « J'en ai
@@ -887,6 +952,20 @@ function renderPills(s) {
 
 document.addEventListener("click", (e) => { if (e.target.closest("[data-open-settings]")) openSettings(); });
 
+/* Ce que tu as appris à l'app, regroupé par nom français. */
+function learnedHtml() {
+  const groups = new Map();
+  for (const v of Object.values(S().aliases || {})) {
+    if (!groups.has(v.fr)) groups.set(v.fr, v);
+  }
+  if (!groups.size) return `<p class="note">Rien encore. À l'épicerie, touche la quantité d'un article pour corriger son nom,
+    son rayon ou le relier à un autre : l'app s'en souviendra.</p>`;
+  return `<div class="set-card" id="set-learned">${[...groups.values()]
+    .sort((a, b) => a.fr.localeCompare(b.fr, "fr"))
+    .map((v) => `<div class="set-line"><span><b class="learned-fr">${esc(v.fr)}</b>${v.en ? ` · ${esc(v.en)}` : ""}</span>
+      <button class="ghost-mini" data-forget="${esc(v.fr)}">Oublier</button></div>`).join("")}</div>`;
+}
+
 function openSettings() {
   const c = sync.code();
   const configured = sync.configured();
@@ -920,10 +999,12 @@ function openSettings() {
     <div class="sheet-body">
       <h3 class="set-h">Partage</h3>
       ${shareBlock}
+      <h3 class="set-h">Ingrédients appris</h3>
+      ${learnedHtml()}
       <h3 class="set-h">Données</h3>
       <button class="ghost-btn wide" id="set-starters">Remettre les recettes de départ</button>
       <button class="ghost-btn danger wide" id="set-erase">Tout effacer</button>
-      <p class="note center">Popote · v3</p>
+      <p class="note center">Popote · v4 · ${dictionarySize} ingrédients connus en anglais et en français</p>
     </div>`, (el) => {
     renderPills(sync.getStatus());
     $("#set-create", el)?.addEventListener("click", async () => {
@@ -951,6 +1032,16 @@ function openSettings() {
       openSettings();
     });
     $("#set-starters", el).addEventListener("click", () => { store.restoreStarters(); toast("Recettes de départ remises"); });
+    $("#set-learned", el)?.addEventListener("click", (e) => {
+      const b = e.target.closest("[data-forget]");
+      if (!b) return;
+      const fr = b.dataset.forget;
+      const ops = Object.entries(S().aliases).filter(([, v]) => v.fr === fr).map(([k]) => ["aliases", k, undefined]);
+      const prev = ops.map(([c, k]) => [c, k, S().aliases[k]]);
+      store.apply(ops);
+      openSettings();
+      toast(`« ${fr} » oublié`, { action: "Annuler", onAction: () => store.apply(prev) });
+    });
     $("#set-erase", el).addEventListener("click", () => {
       if (!confirm(c ? "Tout effacer, pour toutes les personnes du foyer ?" : "Tout effacer : recettes, planning et épicerie ?")) return;
       store.eraseAll();
@@ -961,7 +1052,7 @@ function openSettings() {
 
 /* ══ Démarrage ════════════════════════════════════════════════ */
 
-function renderAll() { renderWeek(); renderRecipes(); renderGrocery(); }
+function renderAll() { setAliases(S().aliases); renderWeek(); renderRecipes(); renderGrocery(); }
 store.subscribe(renderAll);
 photos.onChange(renderAll);
 photos.loadAll();

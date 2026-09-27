@@ -639,7 +639,10 @@ button.cook-x { background: var(--fill); color: var(--tx-2); }
   :root { --line: rgba(128,128,128,.6); --hair: rgba(128,128,128,.5); --tx-3: var(--tx-2); }
 }
 
-/* ── v3 : bilingue ── */
-.ing-text { display: flex; flex-direction: column; line-height: 1.3; }
-.ing-fr { color: var(--tx-3); font-size: .8125rem; margin-top: 1px; }
-.ing-fr::before { content: "→ "; }
+
+/* ── v4 : liste bilingue, fiche article ── */
+.g-en { font-weight: 400; color: var(--tx-2); }
+.g-row.done .g-en { color: var(--tx-3); }
+.learned-fr { font-weight: 600; color: var(--tx); }
+.learned-fr::first-letter { text-transform: uppercase; }
+#set-learned .set-line span { color: var(--tx-2); }
