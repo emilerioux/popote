@@ -7,6 +7,8 @@
    les règles de lecture s'améliorent.
    ============================================================ */
 
+import { canon } from "./lexicon.js";
+
 /* ── Dates ─────────────────────────────────────────────────── */
 
 export const DAYS = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"];
@@ -95,7 +97,14 @@ export const deaccent = (s) =>
   s.toLowerCase().replace(/œ/g, "oe").replace(/æ/g, "ae")
     .normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/’/g, "'");
 
+/* Le rayon se devine sur le nom canonique (« garlic » → « ail »),
+   puis sur le texte d'origine si le canonique ne dit rien. */
 export function guessAisle(name) {
+  const a = aisleOf(canon(name).name);
+  return a === "autre" ? aisleOf(name) : a;
+}
+
+function aisleOf(name) {
   const n = " " + deaccent(name) + " ";
   let best = "autre", len = 0;
   for (const [aisle, words] of Object.entries(KEYWORDS)) {
@@ -137,8 +146,17 @@ const UNITS = [
 ];
 const PLURAL = Object.fromEntries(UNITS.filter((u) => u[2]).map((u) => [u[1], u[2]]));
 
+/* Quantités écrites en lettres, fréquentes dans les descriptions TikTok. */
+const WORD_QTY = {
+  a: 1, an: 1, one: 1, un: 1, une: 1, two: 2, deux: 2, three: 3, trois: 3, four: 4, quatre: 4,
+  five: 5, cinq: 5, six: 6, half: 0.5, demi: 0.5, demie: 0.5, "a half": 0.5, "une demie": 0.5,
+  "un demi": 0.5, dozen: 12, "a dozen": 12, douzaine: 12, "une douzaine": 12,
+};
+const WORD_QTY_RE = new RegExp(`^(${Object.keys(WORD_QTY).sort((a, b) => b.length - a.length).join("|")})(?:\\s+(?:de|d'|d’|of))?\\s+`, "i");
+
 function readQty(s) {
   let m;
+  if ((m = s.match(WORD_QTY_RE))) return [WORD_QTY[m[1].toLowerCase()], m[0]];
   if ((m = s.match(/^(\d+)\s+(\d+)\/(\d+)/))) return [+m[1] + m[2] / m[3], m[0]];
   if ((m = s.match(/^(\d+)\/(\d+)/))) return [m[1] / m[2], m[0]];
   if ((m = s.match(/^(\d+(?:[.,]\d+)?)\s*([½¼¾⅓⅔])?/)))
@@ -149,7 +167,11 @@ function readQty(s) {
 
 /* « 2 c. à soupe d'huile d'olive » → { qty: 2, unit: "c. à soupe", name: "huile d'olive" } */
 export function parseLine(line) {
-  let s = String(line || "").trim().replace(/^[-•*]\s*/, "");
+  let s = String(line || "").trim().replace(/^[-•*]\s*/, "")
+    /* « un peu de sel », « a handful of spinach » : pas de vraie quantité. */
+    .replace(/^(un peu d(e\s+|['’])|une poignée d(e\s+|['’])|a (little|bit of|splash of|drizzle of|handful of)\s+|some\s+|quelques\s+)/i, "")
+    /* « juice of 1 lemon », « le jus d'un citron » → on achète le citron. */
+    .replace(/^(the\s+|le\s+)?(juice|zest|jus|zeste)\s+(of\s+|de\s+|d['’]\s*)/i, "");
   const [qty, used] = readQty(s);
   s = s.slice(used.length).trim();
   let unit = "";
@@ -168,16 +190,24 @@ function toBase(ing) {
   if (ing.unit === "kg") return { ...ing, qty: ing.qty * 1000, unit: "g" };
   if (ing.unit === "l")  return { ...ing, qty: ing.qty * 1000, unit: "ml" };
   if (ing.unit === "oz" && ing.qty !== null) return { ...ing, qty: ing.qty * 28.35, unit: "g" };
+  /* Les livres aussi : « 1 lb shrimp » s'additionne avec « 300 g de crevettes ». */
+  if (ing.unit === "lb" && ing.qty !== null) return { ...ing, qty: ing.qty * 453.6, unit: "g" };
   return ing;
 }
 
 /* En magasin on achète des objets entiers : 1 ½ oignon → 2. */
 const WHOLE = new Set(["", "boîte", "gousse", "paquet", "sachet", "tranche", "botte", "casseau", "filet", "pot"]);
 
-/* Clé d'addition : sans accents, sans « s » final — « oignons » = « oignon ». */
+/* Clé d'addition : nom canonique (anglais → français, sans « frais »,
+   « chopped »…), sans accents, sans « s » final.
+   « 2 cloves garlic, minced » = « gousses d'ail » = « ail ». */
 export const keyOf = (name) =>
-  deaccent(name).replace(/[^a-z0-9' -]/g, "").split(/\s+/).filter(Boolean)
+  deaccent(canon(name).name).replace(/[^a-z0-9' -]/g, "").split(/\s+/).filter(Boolean)
     .map((w) => w.replace(/(s|x)$/, "")).join(" ");
+
+/* Nom affiché à l'épicerie : le canonique, pour une liste d'une seule langue. */
+export const displayName = (name) => canon(name).name;
+export { canon };
 
 /* ── Affichage des quantités ───────────────────────────────── */
 
@@ -240,7 +270,7 @@ export function groceryFor(state, mon) {
       const k = keyOf(ing.name) + "|" + b.unit;
       let it = items.get(k);
       if (!it) {
-        it = { key: `${wk}|${k}`, k: keyOf(ing.name), name: ing.name, unit: b.unit, qty: 0, hasQty: false,
+        it = { key: `${wk}|${k}`, k: keyOf(ing.name), name: displayName(ing.name), unit: b.unit, qty: 0, hasQty: false,
                from: new Set(), aisle: guessAisle(ing.name) };
         items.set(k, it);
       }
@@ -249,10 +279,31 @@ export function groceryFor(state, mon) {
     }
   }
 
+  /* Même ingrédient en tasses d'un côté et en ml de l'autre (recette
+     anglaise + recette québécoise) : on ramène tout en ml pour additionner. */
+  const VOL = { ml: 1, tasse: 250, "c. à soupe": 15, "c. à thé": 5 };
+  const byK = new Map();
+  for (const it of items.values()) {
+    if (!(it.unit in VOL)) continue;
+    if (!byK.has(it.k)) byK.set(it.k, []);
+    byK.get(it.k).push(it);
+  }
+  for (const group of byK.values()) {
+    if (group.length < 2 || !group.some((it) => it.unit === "ml" || it.unit === "tasse")) continue;
+    let ml = 0, has = false;
+    for (const it of group) {
+      items.delete(`${it.k}|${it.unit}`);
+      if (it.hasQty) { ml += it.qty * VOL[it.unit]; has = true; }
+    }
+    const first = group.find((it) => it.unit === "ml") || group[0];
+    items.set(`${first.k}|ml`, { ...first, key: `${wk}|${first.k}|ml`, unit: "ml", qty: ml, hasQty: has,
+                                 from: new Set(group.flatMap((it) => [...it.from])) });
+  }
+
   const list = [...items.values()].map((it) => ({ ...it, from: [...it.from] }));
   for (const [id, x] of Object.entries(state.extras || {})) {
     const ing = toBase(parseLine(x.line));
-    list.push({ key: `x|${id}`, k: keyOf(ing.name || x.line), extra: id, name: ing.name || x.line, unit: ing.unit,
+    list.push({ key: `x|${id}`, k: keyOf(ing.name || x.line), extra: id, name: displayName(ing.name || x.line), unit: ing.unit,
                 qty: ing.qty ?? 0, hasQty: ing.qty !== null, from: [], aisle: guessAisle(ing.name || x.line) });
   }
 

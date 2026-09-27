@@ -10,7 +10,7 @@ import * as sync from "./sync.js";
 import * as photos from "./photos.js";
 import { DAYS, mondayOf, addDays, iso, shortDate, parseLine, guessAisle, scaleLine,
          groceryFor, AISLES, TAGS, FILTERS, tagsOf, matchesFilter, suggest, money,
-         unitPrice, guessEmoji } from "./data.js";
+         unitPrice, guessEmoji, canon } from "./data.js";
 import { parseRecipeText } from "./import.js";
 import { openCook } from "./cook.js";
 import { pop, buzz } from "./motion.js";
@@ -224,10 +224,15 @@ function openPicker(dayKey) {
 
 const norm = (s) => String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
 
+/* Recherche bilingue : « garlic » trouve les recettes avec de l'ail,
+   « crevettes » trouve celles qui disent « shrimp ». On compare le
+   texte tel quel ET les noms canoniques des deux côtés. */
 function filterRecipes(q, filter = "") {
-  const n = norm(q);
+  const n = norm(q), c = norm(canon(q).name);
+  const hit = (s) => s.includes(n) || (c.length > 1 && s.includes(c));
   return recipeList().filter((r) => matchesFilter(r, filter) &&
-    (!n || norm(r.name).includes(n) || (r.ingredients || []).some((l) => norm(l).includes(n))));
+    (!n || hit(norm(r.name)) || (r.ingredients || []).some((l) =>
+      hit(norm(l)) || hit(norm(canon(parseLine(l).name).name)))));
 }
 
 /* « 25 min · ★★★★ · Végé » */
@@ -340,7 +345,9 @@ function openRecipe(id, { day } = {}) {
       $("#rd-inc", el).disabled = n >= MAX_PORTIONS;
       $("#rd-ing", el).innerHTML = (r.ingredients || []).map((l) => {
         const aisle = AISLES.find((a) => a.id === guessAisle(parseLine(l).name));
-        return `<li><span class="ing-dot" title="${esc(aisle.name)}">${aisle.emoji}</span>${esc(scaleLine(l, n / base))}</li>`;
+        /* Ligne en anglais : on montre sous quel nom elle ira à l'épicerie. */
+        const c = canon(parseLine(l).name);
+        return `<li><span class="ing-dot" title="${esc(aisle.name)}">${aisle.emoji}</span><span class="ing-text">${esc(scaleLine(l, n / base))}${c.translated ? `<small class="ing-fr">${esc(c.name)}</small>` : ""}</span></li>`;
       }).join("");
     };
     draw();
@@ -546,7 +553,7 @@ function openEditor(id, { planOn, draft } = {}) {
       const ls = lines(ing.value);
       $("#ed-prev", el).innerHTML = ls.length ? ls.map((l) => {
         const p = parseLine(l), a = AISLES.find((x) => x.id === guessAisle(p.name));
-        return `<span class="prev-chip" title="${esc(a.name)}">${a.emoji} ${esc(p.name || l)}</span>`;
+        return `<span class="prev-chip" title="${esc(a.name)}">${a.emoji} ${esc(p.name ? canon(p.name).name : l)}</span>`;
       }).join("") : "";
     };
     validate(); preview();
@@ -916,7 +923,7 @@ function openSettings() {
       <h3 class="set-h">Données</h3>
       <button class="ghost-btn wide" id="set-starters">Remettre les recettes de départ</button>
       <button class="ghost-btn danger wide" id="set-erase">Tout effacer</button>
-      <p class="note center">Popote · v2</p>
+      <p class="note center">Popote · v3</p>
     </div>`, (el) => {
     renderPills(sync.getStatus());
     $("#set-create", el)?.addEventListener("click", async () => {
