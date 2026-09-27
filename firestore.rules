@@ -3,11 +3,20 @@ rules_version = '2';
 // Un foyer = un document dont l'identifiant est un code secret de 24
 // caractères. On peut lire/écrire un foyer si on connaît son code,
 // mais personne ne peut lister les foyers ni en supprimer un.
+// Les photos des recettes vivent dans une sous-collection à part
+// (un document par recette, JPEG compressé de moins de 400 Ko).
 service cloud.firestore {
   match /databases/{database}/documents {
     match /foyers/{code} {
       allow get, create, update: if code.size() >= 20;
       allow list, delete: if false;
+
+      match /photos/{recipe} {
+        allow read, delete: if code.size() >= 20;
+        allow create, update: if code.size() >= 20
+                              && request.resource.data.d is string
+                              && request.resource.data.d.size() < 400000;
+      }
     }
   }
 }

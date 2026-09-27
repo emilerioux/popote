@@ -67,8 +67,29 @@ const KEYWORDS = {
     "sauce soya", "sauce teriyaki", "sauce hoisin", "sauce piquante", "sriracha", "moutarde", "ketchup",
     "mayonnaise", "miel", "sirop d'erable", "graines de sesame", "sesame", "pesto", "salsa", "relish",
     "vanille", "sauce worcestershire", "sauce poisson"],
-  surgeles: ["surgele", "surgeles", "congele", "creme glacee"],
+  surgeles: ["surgele", "surgeles", "congele", "creme glacee", "frozen"],
 };
+
+/* Beaucoup de recettes TikTok sont en anglais : les mêmes rayons. */
+const EN = {
+  fruits: ["onion", "garlic", "shallot", "carrot", "tomato", "bell pepper", "broccoli", "cabbage", "lettuce",
+    "spinach", "potato", "sweet potato", "lemon", "lime", "avocado", "mushroom", "zucchini", "cucumber",
+    "celery", "ginger", "cilantro", "parsley", "fresh basil", "green onion", "scallion", "kale", "apple",
+    "banana", "berries", "jalapeno", "corn on the cob", "green beans"],
+  viande: ["chicken", "beef", "ground beef", "pork", "turkey", "ham", "bacon", "sausage", "salmon",
+    "shrimp", "fish", "tuna steak", "steak", "lamb", "chorizo", "thighs", "breast"],
+  laitier: ["milk", "cream", "heavy cream", "sour cream", "butter", "cheese", "parmesan", "mozzarella",
+    "cheddar", "egg", "yogurt", "greek yogurt", "cream cheese"],
+  boulangerie: ["bread", "buns", "tortilla", "wrap", "pita", "bagel"],
+  sec: ["pasta", "noodles", "rice", "flour", "sugar", "brown sugar", "beans", "black beans", "chickpeas",
+    "lentils", "broth", "stock", "coconut milk", "canned", "diced tomatoes", "tomato paste", "tomato sauce",
+    "oats", "breadcrumbs", "panko", "peanut butter", "cornstarch", "chocolate", "nuts", "almonds"],
+  epices: ["salt", "pepper", "black pepper", "pepper flakes", "chili flakes", "oregano", "cumin", "paprika",
+    "smoked paprika", "garlic powder", "onion powder", "chili powder", "cinnamon", "thyme", "rosemary",
+    "oil", "olive oil", "vinegar", "soy sauce", "honey", "maple syrup", "mustard", "ketchup", "mayo",
+    "mayonnaise", "sriracha", "hot sauce", "sesame", "sesame oil", "seasoning", "spices", "vanilla", "pesto"],
+};
+for (const [a, ws] of Object.entries(EN)) KEYWORDS[a].push(...ws);
 
 export const deaccent = (s) =>
   s.toLowerCase().replace(/œ/g, "oe").replace(/æ/g, "ae")
@@ -98,16 +119,17 @@ const UNITS = [
   [/^(g|gr|grammes?)(?=[\s.]|$)\.?/i, "g"],
   [/^(ml|millilitres?)(?=[\s.]|$)\.?/i, "ml"],
   [/^(l|litres?)(?=[\s.]|$)\.?/i, "l"],
-  [/^(lb|lbs|livres?)(?=[\s.]|$)\.?/i, "lb"],
-  [/^(c\.?\s*à\s*(soupe|s\.?)|cuill[eè]res?\s*à\s*soupe|c\.s\.|cs)(?=[\s.]|$)\.?/i, "c. à soupe"],
-  [/^(c\.?\s*à\s*(thé|the|café|t\.?)|cuill[eè]res?\s*à\s*(thé|café)|c\.t\.|ct)(?=[\s.]|$)\.?/i, "c. à thé"],
-  [/^tasses?(?=\s|$)/i, "tasse", "tasses"],
-  [/^(boîtes?|boites?|conserves?)(?=\s|$)/i, "boîte", "boîtes"],
-  [/^gousses?(?=\s|$)/i, "gousse", "gousses"],
-  [/^paquets?(?=\s|$)/i, "paquet", "paquets"],
+  [/^(lb|lbs|livres?|pounds?)(?=[\s.]|$)\.?/i, "lb"],
+  [/^(oz|onces?|ounces?)(?=[\s.]|$)\.?/i, "oz"],
+  [/^(c\.?\s*à\s*(soupe|s\.?)|cuill[eè]res?\s*à\s*soupe|c\.s\.|cs|tbsp|tbs|tablespoons?)(?=[\s.]|$)\.?/i, "c. à soupe"],
+  [/^(c\.?\s*à\s*(thé|the|café|t\.?)|cuill[eè]res?\s*à\s*(thé|café)|c\.t\.|ct|tsp|teaspoons?)(?=[\s.]|$)\.?/i, "c. à thé"],
+  [/^(tasses?|cups?)(?=\s|$)/i, "tasse", "tasses"],
+  [/^(boîtes?|boites?|conserves?|cans?)(?=\s|$)/i, "boîte", "boîtes"],
+  [/^(gousses?|cloves?)(?=\s|$)/i, "gousse", "gousses"],
+  [/^(paquets?|packages?|packs?)(?=\s|$)/i, "paquet", "paquets"],
   [/^sachets?(?=\s|$)/i, "sachet", "sachets"],
-  [/^pincées?(?=\s|$)/i, "pincée", "pincées"],
-  [/^tranches?(?=\s|$)/i, "tranche", "tranches"],
+  [/^(pincées?|pinch(es)?)(?=\s|$)/i, "pincée", "pincées"],
+  [/^(tranches?|slices?)(?=\s|$)/i, "tranche", "tranches"],
   [/^bottes?(?=\s|$)/i, "botte", "bottes"],
   [/^casseaux?(?=\s|$)/i, "casseau", "casseaux"],
   [/^filets?(?=\s+(de|d'|d’))/i, "filet", "filets"],
@@ -137,7 +159,7 @@ export function parseLine(line) {
       if (m) { unit = canon; s = s.slice(m[0].length).trim(); break; }
     }
   }
-  s = s.replace(/^(de|des|du)\s+/i, "").replace(/^d['’]\s*/i, "").trim();
+  s = s.replace(/^(de|des|du|of)\s+/i, "").replace(/^d['’]\s*/i, "").trim();
   return { qty, unit, name: s };
 }
 
@@ -145,6 +167,7 @@ export function parseLine(line) {
 function toBase(ing) {
   if (ing.unit === "kg") return { ...ing, qty: ing.qty * 1000, unit: "g" };
   if (ing.unit === "l")  return { ...ing, qty: ing.qty * 1000, unit: "ml" };
+  if (ing.unit === "oz" && ing.qty !== null) return { ...ing, qty: ing.qty * 28.35, unit: "g" };
   return ing;
 }
 
@@ -152,7 +175,7 @@ function toBase(ing) {
 const WHOLE = new Set(["", "boîte", "gousse", "paquet", "sachet", "tranche", "botte", "casseau", "filet", "pot"]);
 
 /* Clé d'addition : sans accents, sans « s » final — « oignons » = « oignon ». */
-const keyOf = (name) =>
+export const keyOf = (name) =>
   deaccent(name).replace(/[^a-z0-9' -]/g, "").split(/\s+/).filter(Boolean)
     .map((w) => w.replace(/(s|x)$/, "")).join(" ");
 
@@ -217,7 +240,7 @@ export function groceryFor(state, mon) {
       const k = keyOf(ing.name) + "|" + b.unit;
       let it = items.get(k);
       if (!it) {
-        it = { key: `${wk}|${k}`, name: ing.name, unit: b.unit, qty: 0, hasQty: false,
+        it = { key: `${wk}|${k}`, k: keyOf(ing.name), name: ing.name, unit: b.unit, qty: 0, hasQty: false,
                from: new Set(), aisle: guessAisle(ing.name) };
         items.set(k, it);
       }
@@ -229,24 +252,151 @@ export function groceryFor(state, mon) {
   const list = [...items.values()].map((it) => ({ ...it, from: [...it.from] }));
   for (const [id, x] of Object.entries(state.extras || {})) {
     const ing = toBase(parseLine(x.line));
-    list.push({ key: `x|${id}`, extra: id, name: ing.name || x.line, unit: ing.unit,
+    list.push({ key: `x|${id}`, k: keyOf(ing.name || x.line), extra: id, name: ing.name || x.line, unit: ing.unit,
                 qty: ing.qty ?? 0, hasQty: ing.qty !== null, from: [], aisle: guessAisle(ing.name || x.line) });
   }
 
-  let done = 0;
+  let done = 0, total = 0, budget = 0, unpriced = 0;
+  const pantry = [];
   for (const it of list) {
     it.done = !!state.checked[it.key];
-    if (it.done) done++;
     if (it.hasQty && WHOLE.has(it.unit)) it.qty = Math.ceil(it.qty - 0.01);
     it.qtyText = it.hasQty ? formatQty(it.qty, it.unit) : "";
+    it.price = priceOf(state, it);
+    /* Garde-manger : ce qu'on a toujours sort de la liste — sauf les
+       articles ajoutés à la main, qui sont là parce qu'on en manque. */
+    it.pantry = !it.extra && !!(state.pantry || {})[it.k];
+    if (it.pantry) { pantry.push(it); continue; }
+    total++;
+    if (it.done) done++;
+    if (it.price !== null) budget += it.price; else unpriced++;
   }
 
   const byName = (a, b) => a.name.localeCompare(b.name, "fr", { sensitivity: "base" });
   const groups = AISLES
-    .map((a) => ({ ...a, items: list.filter((it) => it.aisle === a.id).sort(byName) }))
+    .map((a) => ({ ...a, items: list.filter((it) => it.aisle === a.id && !it.pantry).sort(byName) }))
     .filter((g) => g.items.length);
 
-  return { groups, meals, total: list.length, done };
+  return { groups, pantry: pantry.sort(byName), meals, total, done, budget, unpriced };
+}
+
+/* ── Prix (budget estimé) ──────────────────────────────────────
+   Un prix est gardé PAR UNITÉ DE BASE (par gramme, par ml, par
+   boîte, à l'unité) : il reste juste quand les quantités changent
+   d'une semaine à l'autre. Les valeurs de départ sont des ordres de
+   grandeur d'épicerie à Montréal — faits pour être corrigés. */
+const DEFAULT_PRICES = [
+  ["spaghetti", "g", 0.005], ["penne", "g", 0.005], ["pâtes", "g", 0.005], ["bœuf haché", "g", 0.012],
+  ["poitrines de poulet", "g", 0.018], ["cuisses de poulet", "g", 0.012], ["saumon", "filet", 4.5],
+  ["riz au jasmin", "g", 0.004], ["riz basmati", "g", 0.005], ["riz", "g", 0.004], ["nouilles udon", "g", 0.008],
+  ["tofu ferme", "g", 0.008], ["pommes de terre", "g", 0.003], ["pommes de terre grelots", "g", 0.005],
+  ["cheddar râpé", "g", 0.02], ["fromage monterey jack râpé", "g", 0.02], ["parmesan", "g", 0.04],
+  ["épinards", "g", 0.02], ["pois mange-tout", "g", 0.02],
+  ["crème sure", "ml", 0.006], ["crème 15 %", "ml", 0.005], ["salsa", "ml", 0.012], ["pesto", "ml", 0.025],
+  ["sauce teriyaki", "ml", 0.02], ["sauce soya", "ml", 0.012], ["lait", "ml", 0.0025], ["maïs surgelé", "ml", 0.006],
+  ["oignon", "", 0.6], ["oignon rouge", "", 0.8], ["carotte", "", 0.3], ["poivron rouge", "", 1.8],
+  ["poivron vert", "", 1.3], ["brocoli", "", 2.8], ["tomates", "", 1.0], ["laitue romaine", "", 2.5],
+  ["lime", "", 0.6], ["citron", "", 0.8], ["avocat", "", 1.8], ["tortillas", "", 0.5], ["pains naan", "", 1.25],
+  ["oignons verts", "", 0.25], ["œufs", "", 0.4],
+  ["tomates en dés", "boîte", 1.6], ["sauce tomate", "boîte", 1.3], ["haricots rouges", "boîte", 1.5],
+  ["haricots noirs", "boîte", 1.5], ["pois chiches", "boîte", 1.5], ["lait de coco", "boîte", 2.3],
+  ["maïs en crème", "boîte", 1.5], ["maïs en grains", "boîte", 1.5],
+  ["assaisonnement à tacos", "sachet", 1.5], ["asperges", "botte", 4], ["tomates cerises", "casseau", 4],
+  ["ail", "gousse", 0.15],
+];
+const DEFAULTS = new Map(DEFAULT_PRICES.map(([n, u, p]) => [keyOf(n), { u, p }]));
+
+/* Prix unitaire connu (le tien d'abord, sinon celui de départ). */
+export function unitPrice(state, k) {
+  return (state.prices || {})[k] || DEFAULTS.get(k) || null;
+}
+function priceOf(state, it) {
+  const up = unitPrice(state, it.k);
+  if (!up || up.u !== it.unit) return null;
+  /* Sans quantité (« sel et poivre ») : compté une fois. */
+  return (it.hasQty ? it.qty : 1) * up.p;
+}
+
+export const money = (x) =>
+  x.toLocaleString("fr-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " $";
+
+/* ── Étiquettes et filtres ─────────────────────────────────── */
+
+export const TAGS = [
+  { id: "vege",      label: "Végé",       emoji: "🥦" },
+  { id: "eco",       label: "Économique", emoji: "💰" },
+  { id: "prep",      label: "Meal prep",  emoji: "🍱" },
+  { id: "reconfort", label: "Réconfort",  emoji: "🛋️" },
+  { id: "sante",     label: "Santé",      emoji: "💪" },
+];
+
+/* Filtres = deux filtres calculés + les étiquettes. */
+export const FILTERS = [
+  { id: "fav",    label: "Favoris", emoji: "★" },
+  { id: "rapide", label: "Rapide",  emoji: "⚡" },
+  ...TAGS,
+];
+
+const STARTER_TAGS = {
+  "s-bolognaise": ["eco", "reconfort"], "s-tacos": [], "s-teriyaki": ["sante"],
+  "s-chili": ["vege", "eco", "prep"], "s-saumon": ["sante"], "s-pate-chinois": ["eco", "reconfort", "prep"],
+  "s-curry": ["vege", "prep"], "s-tofu": ["vege", "sante"], "s-quesadillas": [], "s-pesto": ["reconfort"],
+};
+/* Les recettes de départ déjà enregistrées n'ont pas de champ tags :
+   on retombe sur les étiquettes prévues pour elles. */
+export const tagsOf = (r) => r.tags ?? STARTER_TAGS[r.id] ?? [];
+
+export function matchesFilter(r, f) {
+  if (!f) return true;
+  if (f === "fav") return (r.rating || 0) >= 4;
+  if (f === "rapide") return r.time > 0 && r.time <= 30;
+  return tagsOf(r).includes(f);
+}
+
+/* ── Suggestions ────────────────────────────────────────────────
+   Tirage au hasard, mais pondéré : les recettes bien notées
+   reviennent plus souvent, celles mangées récemment presque jamais. */
+export function suggest(state, mon, count, exclude = new Set()) {
+  const monIso = iso(mon);
+  const last = {};
+  for (const [day, p] of Object.entries(state.plan)) {
+    if (day < monIso && (!last[p.r] || day > last[p.r])) last[p.r] = day;
+  }
+  const RATING = [1.1, 0.35, 0.7, 1, 1.8, 2.6];   // index = étoiles ; 0 = jamais notée
+  const pool = Object.values(state.recipes).filter((r) => !exclude.has(r.id)).map((r) => {
+    let w = RATING[r.rating || 0];
+    if (last[r.id]) {
+      const [y, m, d] = last[r.id].split("-").map(Number);
+      const days = (mon - new Date(y, m - 1, d)) / 86400000;
+      w *= days < 7 ? 0.1 : days < 14 ? 0.3 : days < 28 ? 0.7 : 1;
+    }
+    return { r, w };
+  });
+  const out = [];
+  while (out.length < count && pool.length) {
+    let x = Math.random() * pool.reduce((s, p) => s + p.w, 0);
+    let i = 0;
+    while (i < pool.length - 1 && (x -= pool[i].w) > 0) i++;
+    out.push(pool.splice(i, 1)[0].r);
+  }
+  return out;
+}
+
+/* ── Emoji deviné d'après le nom ── */
+const EMOJI_GUESS = [
+  [/p[aâ]tes|spaghetti|penne|lasagne|pasta|mac/i, "🍝"], [/taco/i, "🌮"], [/burrito|wrap/i, "🌯"],
+  [/curry|cari|dahl|dal\b/i, "🍛"], [/soupe|soup|potage|bouillon/i, "🍲"], [/salade|salad|bowl/i, "🥗"],
+  [/saumon|poisson|salmon|fish|morue|thon/i, "🐟"], [/crevette|shrimp/i, "🍤"], [/burger/i, "🍔"],
+  [/pizza/i, "🍕"], [/steak|b(oe|œ)uf|beef/i, "🥩"], [/cr[eê]pe|pancake|gaufre/i, "🥞"],
+  [/ramen|nouille|noodle|pho|udon/i, "🍜"], [/sushi/i, "🍣"], [/riz|rice/i, "🍚"], [/(oe|œ)uf|egg|omelette/i, "🍳"],
+  [/poulet|chicken/i, "🍗"], [/g[aâ]teau|cake|dessert|brownie|cookie|biscuit/i, "🍰"], [/tofu|stir.?fry|saut[ée]/i, "🥢"],
+];
+export function guessEmoji(name, extra = "") {
+  for (const t of [name, extra]) {
+    const hit = EMOJI_GUESS.find(([re]) => re.test(t));
+    if (hit) return hit[1];
+  }
+  return "🍲";
 }
 
 /* ── Recettes de départ ────────────────────────────────────── */

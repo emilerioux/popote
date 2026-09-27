@@ -1,20 +1,23 @@
 /* Popote — service worker.
    Bumper VERSION à CHAQUE déploiement, sinon le téléphone garde
    l'ancienne version en cache. */
-const VERSION = "v1";
+const VERSION = "v2";
 const CACHE_NAME = `popote-${VERSION}`;
 const RUNTIME = "popote-cdn";   // SDK Firebase, gardé pour le hors-ligne
 
 const ASSETS = [
   "./",
   "./index.html",
-  "./style.css?v=1",
-  "./js/app.js?v=1",
+  "./style.css?v=2",
+  "./js/app.js?v=2",
   "./js/data.js",
   "./js/store.js",
   "./js/sync.js",
   "./js/ui.js",
   "./js/motion.js",
+  "./js/import.js",
+  "./js/cook.js",
+  "./js/photos.js",
   "./firebase-config.js",
   "./manifest.json",
   "./icons/icon-192.png",

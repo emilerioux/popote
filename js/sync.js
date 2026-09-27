@@ -12,11 +12,12 @@
 
 import { firebaseConfig } from "../firebase-config.js";
 import * as store from "./store.js";
+import * as photos from "./photos.js";
 
 const CDN = "https://www.gstatic.com/firebasejs/10.14.1/";
 const CODE_KEY = "pp-foyer";
 
-let fs = null, db = null, ref = null, unsub = null;
+let fs = null, db = null, ref = null, unsub = null, unsubPhotos = null;
 let ready = false, queue = [];
 let status = "off";
 const statusListeners = new Set();
@@ -64,6 +65,29 @@ function push(ops) {
   fs.updateDoc(ref, ...toFields(ops)).catch(fail);
 }
 
+/* Photos : un document par recette dans foyers/{code}/photos. */
+function pushPhoto(id, data) {
+  if (!ref) return;
+  const d = fs.doc(ref, "photos", id);
+  (data ? fs.setDoc(d, { d: data }) : fs.deleteDoc(d)).catch(fail);
+}
+
+function watchPhotos() {
+  let first = true;
+  unsubPhotos = fs.onSnapshot(fs.collection(ref, "photos"), (snap) => {
+    for (const ch of snap.docChanges()) {
+      if (ch.type === "removed") photos.del(ch.doc.id, { remote: true });
+      else photos.put(ch.doc.id, ch.doc.data().d, { remote: true });
+    }
+    if (first && !snap.metadata.fromCache) {
+      first = false;
+      /* Nos photos que le foyer n'a pas encore. */
+      const remote = new Set(snap.docs.map((d) => d.id));
+      for (const [id, data] of photos.entries()) if (!remote.has(id)) pushPhoto(id, data);
+    }
+  }, fail);
+}
+
 function fail(err) { console.warn("[popote] synchro :", err); setStatus("error"); }
 
 export async function connect(c) {
@@ -74,9 +98,12 @@ export async function connect(c) {
   try { await init(); } catch (e) { setStatus("offline"); return false; }
 
   if (unsub) unsub();
+  if (unsubPhotos) unsubPhotos();
   ref = fs.doc(db, "foyers", c);
   ready = false; queue = [];
   store.setPushHook(push);
+  photos.setPushHook(pushPhoto);
+  watchPhotos();
 
   unsub = fs.onSnapshot(ref, { includeMetadataChanges: true }, (snap) => {
     const fromServer = !snap.metadata.fromCache;
@@ -107,8 +134,10 @@ export async function connect(c) {
 
 export function leave() {
   if (unsub) unsub();
-  unsub = null; ref = null; ready = false; queue = [];
+  if (unsubPhotos) unsubPhotos();
+  unsub = null; unsubPhotos = null; ref = null; ready = false; queue = [];
   store.setPushHook(null);
+  photos.setPushHook(null);
   try { localStorage.removeItem(CODE_KEY); } catch (_) {}
   setStatus("off");
 }

@@ -441,6 +441,188 @@ code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: .9em; 
 .toast button { flex: none; padding: 7px 14px; border-radius: 99px; background: rgba(255,255,255,.12); color: #FFB08C; font-weight: 700; }
 .toast:not(:has(button)) { padding-right: 18px; }
 
+/* ══ v2 ═══════════════════════════════════════════════════════ */
+
+/* ── Filtres ── */
+.filters {
+  display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none;
+  margin: -4px -16px 14px; padding: 2px 16px;
+}
+.filters::-webkit-scrollbar { display: none; }
+.filters.wrap { flex-wrap: wrap; overflow: visible; margin: 0; padding: 0; }
+.fchip {
+  flex: none; height: 34px; padding: 0 13px; border-radius: 99px;
+  background: var(--fill); color: var(--tx-2); font-size: .875rem; font-weight: 600;
+  transition: transform .12s ease-out, background-color .15s, color .15s;
+}
+.fchip:active { transform: scale(.94); }
+.fchip.on { background: var(--accent); color: var(--accent-ink); }
+
+.tile-row { display: flex; gap: 8px; }
+.tile-row .tile-btn { flex: 1; }
+
+/* ── Vignettes photo ── */
+.has-photo { padding: 0; overflow: hidden; }
+.has-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.stars-inline { color: var(--orange); letter-spacing: .02em; }
+
+/* ── Détail : photo, étoiles, notes ── */
+.rd-photo {
+  margin: -2px -16px 14px; aspect-ratio: 16 / 10; overflow: hidden;
+  mask-image: linear-gradient(#000 70%, transparent);
+  -webkit-mask-image: linear-gradient(#000 70%, transparent);
+}
+.rd-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.rd-photo + .rd-hero { margin-top: -40px; position: relative; }
+.rd-tags { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin-top: 10px; }
+.stars { display: flex; justify-content: center; gap: 2px; margin-top: 10px; }
+.stars button {
+  width: 40px; height: 40px; font-size: 1.625rem; line-height: 1; color: var(--fill-2);
+  transition: color .15s;
+}
+.stars button.on { color: var(--orange); }
+.stars.big button { width: 52px; height: 52px; font-size: 2.25rem; }
+.cook-btn { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 0 0 8px; }
+.note-box {
+  width: 100%; border: 0; outline: 0; border-radius: var(--r-md); resize: vertical;
+  background: var(--card-2); padding: 12px 14px; line-height: 1.45; box-shadow: var(--sh-card);
+}
+.note-box:focus { box-shadow: 0 0 0 2px var(--accent); }
+.source-link { display: flex; align-items: center; justify-content: center; text-decoration: none; }
+
+/* ── Import ── */
+.how { margin: 0 0 14px; padding: 0 0 0 22px; color: var(--tx-2); font-size: .9375rem; }
+.how li { margin-bottom: 6px; }
+.how b { color: var(--tx); }
+#im-paste { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 0 0 14px; }
+
+/* ── Éditeur : photo ── */
+.photo-pick { margin-bottom: 14px; }
+.photo-pick img { width: 100%; aspect-ratio: 16 / 10; object-fit: cover; border-radius: var(--r-lg); display: block; }
+.photo-empty {
+  display: flex; align-items: center; justify-content: center; gap: 8px; height: 64px; cursor: pointer;
+  border-radius: var(--r-lg); border: 1.5px dashed var(--line); color: var(--tx-2); font-weight: 600;
+}
+.photo-actions { display: flex; gap: 8px; margin-top: 8px; }
+.photo-btn {
+  flex: 1; height: 38px; border-radius: 12px; display: grid; place-items: center; cursor: pointer;
+  background: var(--fill); color: var(--accent-tx); font-weight: 600; font-size: .9375rem;
+}
+
+/* ── Épicerie : budget, prix, garde-manger ── */
+.budget {
+  display: grid; grid-template-columns: 1fr auto; align-items: baseline; row-gap: 1px;
+  margin: -6px 2px 16px; padding: 12px 14px; border-radius: var(--r-md);
+  background: var(--card); box-shadow: var(--sh-card);
+}
+.budget span { color: var(--tx-2); font-size: .9375rem; }
+.budget b { font-size: 1.25rem; font-weight: 800; letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
+.budget small { grid-column: 1 / -1; color: var(--tx-3); font-size: .75rem; }
+.g-side {
+  flex: none; align-self: stretch; display: flex; flex-direction: column; align-items: flex-end; justify-content: center;
+  padding: 0 14px 0 6px; text-align: right; line-height: 1.25; min-width: 72px;
+}
+.g-side:active { background: var(--fill); }
+.g-price { font-size: .75rem; color: var(--tx-2); font-variant-numeric: tabular-nums; margin-top: 2px; }
+.g-price.none { color: var(--accent-tx); opacity: .75; }
+.g-row.done .g-price { color: var(--tx-3); }
+.g-row .g-del { margin-left: -8px; }
+.groc-foot { flex-wrap: wrap; }
+.groc-foot .ghost-btn { padding: 0 10px; font-size: .9375rem; }
+.groc-foot #groc-pantry { flex: 1 1 100%; }
+
+.pantry-toggle { width: 100%; text-align: left; color: var(--tx-2); }
+.pantry-toggle small { display: inline-flex; align-items: center; gap: 2px; }
+.pantry-toggle svg { width: 16px; height: 16px; transition: transform .2s; }
+.pantry.open .pantry-toggle svg { transform: rotate(90deg); }
+.pantry-row .g-main { cursor: default; }
+.pantry-row .g-text b { color: var(--tx-2); }
+.ghost-mini {
+  flex: none; margin-right: 10px; height: 32px; padding: 0 12px; border-radius: 99px;
+  background: var(--fill); color: var(--accent-tx); font-size: .8125rem; font-weight: 600;
+}
+.pantry-list { margin-top: 12px; background: var(--card-2); }
+.toggle-row { display: flex; align-items: center; gap: 12px; padding: 10px 14px; cursor: pointer; }
+.toggle-row + .toggle-row { border-top: .5px solid var(--hair); }
+
+/* Interrupteur façon iOS, à partir d'une vraie case à cocher. */
+.switch {
+  appearance: none; -webkit-appearance: none; flex: none; margin: 0; cursor: pointer;
+  width: 51px; height: 31px; border-radius: 99px; background: var(--fill-2); position: relative;
+  transition: background-color .2s;
+}
+.switch::after {
+  content: ""; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px; border-radius: 50%;
+  background: #fff; box-shadow: 0 2px 6px rgba(0,0,0,.25);
+  transition: transform .28s cubic-bezier(.3,1.4,.5,1);
+}
+.switch:checked { background: var(--green); }
+.switch:checked::after { transform: translateX(20px); }
+
+/* Prix */
+.field > .money-input { display: flex; align-items: center; gap: 10px; margin: 0; font-size: inherit; font-weight: inherit; color: inherit; }
+.money-input input { font-size: 1.5rem !important; font-weight: 700; font-variant-numeric: tabular-nums; }
+.money-input b { font-size: 1.375rem; color: var(--tx-2); }
+
+/* ── Mode cuisine ── */
+.cook {
+  position: fixed; inset: 0; z-index: 50; display: flex; flex-direction: column;
+  background: var(--bg); padding: calc(var(--safe-t) + 6px) 0 calc(var(--safe-b) + 12px);
+}
+.cook-top { display: flex; align-items: center; gap: 8px; padding: 0 12px; }
+.cook-x { flex: none; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; }
+button.cook-x { background: var(--fill); color: var(--tx-2); }
+.cook-title { flex: 1; min-width: 0; text-align: center; line-height: 1.2; }
+.cook-title b { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cook-title span { font-size: .8125rem; color: var(--tx-2); }
+.cook-dots { display: flex; justify-content: center; gap: 5px; margin: 12px 0 4px; }
+.cook-dots i { width: 6px; height: 6px; border-radius: 99px; background: var(--fill-2); transition: width .25s, background-color .25s; }
+.cook-dots i.on { width: 18px; background: var(--accent); }
+.cook-timers { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; padding: 6px 12px 0; }
+.timer-pill {
+  display: inline-flex; align-items: center; gap: 8px; height: 38px; padding: 0 4px 0 14px; border-radius: 99px;
+  background: var(--accent-soft); color: var(--accent-tx);
+}
+.timer-pill b { font-variant-numeric: tabular-nums; font-size: 1.0625rem; }
+.timer-pill small { color: var(--tx-2); font-size: .75rem; max-width: 90px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.timer-pill button { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; color: var(--tx-2); }
+.timer-pill button svg { width: 16px; height: 16px; }
+.timer-pill.rang { background: var(--accent); color: var(--accent-ink); animation: ring .5s ease-in-out infinite alternate; }
+.timer-pill.rang small, .timer-pill.rang button { color: var(--accent-ink); }
+@keyframes ring { to { transform: scale(1.05); } }
+
+.cook-viewport { flex: 1; min-height: 0; overflow: hidden; touch-action: pan-y; }
+.cook-track { display: flex; height: 100%; will-change: transform; }
+.cook-slide {
+  flex: 0 0 100%; min-width: 0; overflow-wrap: anywhere; height: 100%; overflow-y: auto; padding: 24px 24px 16px;
+  display: flex; flex-direction: column;
+}
+.cook-kicker { margin: 0 0 14px; color: var(--accent-tx); font-weight: 700; font-size: .875rem; text-transform: uppercase; letter-spacing: .06em; }
+.cook-step { margin: 0; font-size: clamp(1.5rem, 6.4vw, 2.125rem); line-height: 1.35; letter-spacing: -.012em; font-weight: 600; }
+.timer-chip {
+  display: inline-flex; align-items: center; padding: 0 12px; margin: 2px 0; border-radius: 99px; height: 1.6em;
+  background: var(--accent); color: var(--accent-ink); font-weight: 700; font-size: .8em; vertical-align: .08em;
+  transition: transform .12s ease-out;
+}
+.timer-chip:active { transform: scale(.94); }
+.cook-ing { list-style: none; margin: 0; padding: 0; }
+.cook-ing button {
+  width: 100%; display: flex; align-items: center; gap: 14px; padding: 12px 2px; text-align: left;
+  font-size: 1.1875rem; border-bottom: .5px solid var(--hair);
+}
+.cook-ing button.done { color: var(--tx-3); text-decoration: line-through; }
+.cook-ing button.done .check { background: var(--accent); border-color: var(--accent); }
+.cook-ing button.done .check svg { opacity: 1; }
+.cook-end { align-items: center; justify-content: center; text-align: center; gap: 4px; }
+.cook-end h2 { margin: 10px 0 0; font-size: 2rem; letter-spacing: -.02em; }
+.cook-end p { margin: 0 0 6px; color: var(--tx-2); }
+.cook-end .primary-btn { margin-top: 22px; min-width: 200px; }
+.cook-emoji { font-size: 4rem; line-height: 1; }
+.cook-nav { display: flex; gap: 10px; padding: 8px 16px 0; }
+.cook-nav .ghost-btn { flex: 1; }
+.cook-nav .primary-btn { flex: 2; }
+.cook-nav button:disabled { opacity: .35; }
+
 /* ── Accessibilité ─────────────────────────────────────────── */
 
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

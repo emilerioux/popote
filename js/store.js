@@ -1,11 +1,13 @@
 /* ============================================================
    store.js — l'état de l'app, une seule source de vérité.
 
-   Quatre collections, chacune un dictionnaire { clé: valeur } :
-     recipes  id → recette
+   Six collections, chacune un dictionnaire { clé: valeur } :
+     recipes  id → recette (+ tags, rating 1-5, note, source)
      plan     "2026-09-28" → { r: id de recette, s: portions }
      extras   id → { line: "2 l de lait", t: horodatage }
      checked  clé d'article → true   (cases cochées à l'épicerie)
+     pantry   clé d'ingrédient → { name }   (toujours à la maison)
+     prices   clé d'ingrédient → { u: unité de base, p: prix unitaire }
 
    Toute modification passe par set(col, key, value) : une clé à la
    fois. C'est ce qui permet à la synchro de n'envoyer QUE le champ
@@ -16,11 +18,11 @@
 import { STARTERS } from "./data.js";
 
 const KEY = "pp-state";
-const COLS = ["recipes", "plan", "extras", "checked"];
+const COLS = ["recipes", "plan", "extras", "checked", "pantry", "prices"];
 const listeners = new Set();
 let pushHook = null;
 
-const blank = () => ({ recipes: {}, plan: {}, extras: {}, checked: {} });
+const blank = () => ({ recipes: {}, plan: {}, extras: {}, checked: {}, pantry: {}, prices: {} });
 
 function clean(s) {
   const out = blank();

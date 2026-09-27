@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Popote">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<link rel="stylesheet" href="style.css?v=1">
+<link rel="stylesheet" href="style.css?v=2">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icons/icon-180.png">
 <link rel="icon" href="icons/icon-192.png" type="image/png">
@@ -60,11 +60,18 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/></svg>
           <input id="rec-search" type="search" placeholder="Rechercher une recette ou un ingrédient" autocomplete="off">
         </label>
+        <div class="filters" id="rec-filters"></div>
         <div class="rec-list" id="rec-list"></div>
-        <button class="tile-btn" id="new-recipe">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
-          Nouvelle recette
-        </button>
+        <div class="tile-row">
+          <button class="tile-btn" id="new-recipe">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+            Nouvelle
+          </button>
+          <button class="tile-btn" id="import-recipe">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19h14"/></svg>
+            Importer
+          </button>
+        </div>
       </div>
     </section>
 
@@ -78,6 +85,7 @@
         </div>
         <p class="big-sub" id="groc-sub"></p>
         <div class="progress" id="groc-progress" aria-hidden="true"><span></span></div>
+        <div class="budget" id="groc-budget" hidden></div>
         <form class="add-row" id="add-extra">
           <input id="extra-input" placeholder="Ajouter un article (ex. 2 l de lait)" autocomplete="off" enterkeyhint="done">
           <button class="add-btn" aria-label="Ajouter">
@@ -86,8 +94,9 @@
         </form>
         <div id="groc-list"></div>
         <div class="groc-foot" id="groc-foot">
-          <button class="ghost-btn" id="groc-share">Partager la liste</button>
-          <button class="ghost-btn" id="groc-reset">Tout décocher</button>
+          <button class="ghost-btn" id="groc-pantry">Garde-manger</button>
+          <button class="ghost-btn" id="groc-share">Partager</button>
+          <button class="ghost-btn" id="groc-reset">Décocher</button>
         </div>
       </div>
     </section>
@@ -114,7 +123,7 @@
 <div class="sheet" id="sheet" role="dialog" aria-modal="true" hidden></div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-<script type="module" src="js/app.js?v=1"></script>
+<script type="module" src="js/app.js?v=2"></script>
 <script>
   if ("serviceWorker" in navigator) {
     addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));

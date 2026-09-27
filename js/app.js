@@ -7,8 +7,12 @@
 
 import * as store from "./store.js";
 import * as sync from "./sync.js";
+import * as photos from "./photos.js";
 import { DAYS, mondayOf, addDays, iso, shortDate, parseLine, guessAisle, scaleLine,
-         groceryFor, AISLES } from "./data.js";
+         groceryFor, AISLES, TAGS, FILTERS, tagsOf, matchesFilter, suggest, money,
+         unitPrice, guessEmoji } from "./data.js";
+import { parseRecipeText } from "./import.js";
+import { openCook } from "./cook.js";
 import { pop, buzz } from "./motion.js";
 import { openSheet, closeSheet, toast, esc } from "./ui.js";
 
@@ -21,6 +25,29 @@ const MAX_PORTIONS = 12;
 
 let week = mondayOf(new Date());
 let recQuery = "";
+let recFilter = "";
+let pantryOpen = false;
+
+/* Vignette : la photo si la recette en a une, sinon l'emoji. */
+function thumb(r, cls) {
+  const src = photos.get(r.id);
+  return src
+    ? `<span class="${cls} has-photo"><img src="${src}" alt="" loading="lazy" decoding="async"></span>`
+    : `<span class="${cls}">${esc(r.emoji || "🍽️")}</span>`;
+}
+const starsText = (n) => (n ? "★".repeat(n) : "");
+
+/* Rangée de filtres (Favoris, Rapide, étiquettes). */
+function filterChips(active, counts) {
+  return `<button class="fchip${active ? "" : " on"}" data-filter="">Toutes</button>` +
+    FILTERS.filter((f) => counts[f.id]).map((f) =>
+      `<button class="fchip${active === f.id ? " on" : ""}" data-filter="${f.id}">${f.emoji} ${f.label}</button>`).join("");
+}
+function filterCounts() {
+  const c = {};
+  for (const r of Object.values(S().recipes)) for (const f of FILTERS) if (matchesFilter(r, f.id)) c[f.id] = (c[f.id] || 0) + 1;
+  return c;
+}
 let tab = "semaine";
 try { tab = localStorage.getItem("pp-tab") || "semaine"; } catch (_) {}
 
@@ -80,7 +107,7 @@ function renderWeek() {
     const head = `<div class="day-date"><span class="dow">${name.slice(0, 3)}</span><span class="dnum">${d.getDate()}</span></div>`;
     const body = r
       ? `<button class="meal" data-open="${key}">
-           <span class="meal-emoji">${esc(r.emoji || "🍽️")}</span>
+           ${thumb(r, "meal-emoji")}
            <span class="meal-main"><b>${esc(r.name)}</b><small>${r.time ? `${r.time} min · ` : ""}${portions(p.s || r.servings)}</small></span>
          </button>`
       : `<button class="meal empty" data-pick="${key}">
@@ -123,7 +150,8 @@ function planDay(key, recipeId, s) {
   requestAnimationFrame(() => pop($(`.day[data-day="${key}"] .meal`), 1.05, 0.6));
 }
 
-/* Suggérer : des recettes au hasard, sans doublon dans la semaine. */
+/* Suggérer : tirage pondéré (favoris plus souvent, récents presque
+   jamais), sans doublon dans la semaine. */
 $("#fill-week").addEventListener("click", () => {
   const used = new Set();
   const empties = [];
@@ -131,9 +159,8 @@ $("#fill-week").addEventListener("click", () => {
     const key = iso(addDays(week, i)), p = S().plan[key];
     if (p && S().recipes[p.r]) used.add(p.r); else empties.push(key);
   }
-  let pool = recipeList().filter((r) => !used.has(r.id));
-  if (!pool.length) pool = recipeList();
-  pool.sort(() => Math.random() - 0.5);
+  let pool = suggest(S(), week, empties.length, used);
+  if (!pool.length) pool = suggest(S(), week, empties.length);
   const ops = empties.slice(0, pool.length).map((key, i) => ["plan", key, { r: pool[i].id, s: pool[i].servings || 4 }]);
   if (!ops.length) return;
   store.apply(ops);
@@ -148,6 +175,7 @@ $("#fill-week").addEventListener("click", () => {
 
 function openPicker(dayKey) {
   const cur = S().plan[dayKey];
+  let q = "", filter = "";
   openSheet(`
     <div class="sheet-head">
       <button class="head-btn" data-close>Annuler</button>
@@ -159,23 +187,29 @@ function openPicker(dayKey) {
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/></svg>
         <input id="pick-q" type="search" placeholder="Rechercher" autocomplete="off" autofocus>
       </label>
+      <div class="filters" id="pick-filters"></div>
       <div class="pick-list" id="pick-list"></div>
       <button class="tile-btn" id="pick-new">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Nouvelle recette
       </button>
     </div>`, (el) => {
     const list = $("#pick-list", el);
-    const draw = (q) => {
-      const rs = filterRecipes(q);
+    const draw = () => {
+      $("#pick-filters", el).innerHTML = filterChips(filter, filterCounts());
+      const rs = filterRecipes(q, filter);
       list.innerHTML = rs.map((r) => `
         <button class="pick-row${cur && cur.r === r.id ? " current" : ""}" data-id="${r.id}">
-          <span class="meal-emoji">${esc(r.emoji || "🍽️")}</span>
-          <span class="meal-main"><b>${esc(r.name)}</b><small>${r.time ? `${r.time} min · ` : ""}${portions(r.servings || 4)}</small></span>
+          ${thumb(r, "meal-emoji")}
+          <span class="meal-main"><b>${esc(r.name)}</b><small>${metaLine(r)}</small></span>
           ${cur && cur.r === r.id ? `<svg class="tick" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>` : ""}
         </button>`).join("") || `<p class="empty-note">Aucune recette trouvée.</p>`;
     };
-    draw("");
-    $("#pick-q", el).addEventListener("input", (e) => draw(e.target.value));
+    draw();
+    $("#pick-q", el).addEventListener("input", (e) => { q = e.target.value; draw(); });
+    $("#pick-filters", el).addEventListener("click", (e) => {
+      const b = e.target.closest("[data-filter]");
+      if (b) { filter = b.dataset.filter; draw(); }
+    });
     list.addEventListener("click", (e) => {
       const b = e.target.closest("[data-id]");
       if (!b) return;
@@ -188,36 +222,57 @@ function openPicker(dayKey) {
 
 /* ══ Recettes ═════════════════════════════════════════════════ */
 
-function filterRecipes(q) {
-  const n = norm(q);
-  const all = recipeList();
-  if (!n) return all;
-  return all.filter((r) => norm(r.name).includes(n) || (r.ingredients || []).some((l) => norm(l).includes(n)));
-}
 const norm = (s) => String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
 
+function filterRecipes(q, filter = "") {
+  const n = norm(q);
+  return recipeList().filter((r) => matchesFilter(r, filter) &&
+    (!n || norm(r.name).includes(n) || (r.ingredients || []).some((l) => norm(l).includes(n))));
+}
+
+/* « 25 min · ★★★★ · Végé » */
+function metaLine(r) {
+  const bits = [];
+  if (r.time) bits.push(`${r.time} min`);
+  if (r.rating) bits.push(`<span class="stars-inline">${starsText(r.rating)}</span>`);
+  const t = tagsOf(r).map((id) => TAGS.find((x) => x.id === id)?.label).filter(Boolean);
+  if (t.length) bits.push(esc(t.slice(0, 2).join(", ")));
+  if (!bits.length) bits.push(portions(r.servings || 4));
+  return bits.join(" · ");
+}
+
 function renderRecipes() {
-  const rs = filterRecipes(recQuery);
+  const counts = filterCounts();
+  if (recFilter && !counts[recFilter]) recFilter = "";
+  $("#rec-filters").innerHTML = filterChips(recFilter, counts);
+  const rs = filterRecipes(recQuery, recFilter);
   const planned = new Set();
   for (let i = 0; i < 7; i++) { const p = S().plan[iso(addDays(mondayOf(new Date()), i))]; if (p) planned.add(p.r); }
   $("#rec-list").innerHTML = rs.map((r) => `
     <button class="rec-card" data-id="${r.id}">
-      <span class="rec-emoji">${esc(r.emoji || "🍽️")}</span>
+      ${thumb(r, "rec-emoji")}
       <span class="meal-main">
         <b>${esc(r.name)}</b>
-        <small>${r.time ? `${r.time} min · ` : ""}${(r.ingredients || []).length} ingrédients</small>
+        <small>${metaLine(r)}</small>
       </span>
       ${planned.has(r.id) ? `<span class="chip">Cette semaine</span>` : ""}
     </button>`).join("")
-    || `<p class="empty-note">${recQuery ? "Aucune recette ne correspond." : "Aucune recette pour l'instant."}</p>`;
+    || `<p class="empty-note">${recQuery || recFilter ? "Aucune recette ne correspond." : "Aucune recette pour l'instant."}</p>`;
 }
 
 $("#rec-search").addEventListener("input", (e) => { recQuery = e.target.value; renderRecipes(); });
+$("#rec-filters").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-filter]");
+  if (!b) return;
+  recFilter = b.dataset.filter;
+  renderRecipes();
+});
 $("#rec-list").addEventListener("click", (e) => {
   const b = e.target.closest("[data-id]");
   if (b) openRecipe(b.dataset.id);
 });
 $("#new-recipe").addEventListener("click", () => openEditor(null));
+$("#import-recipe").addEventListener("click", () => openImport());
 
 /* ── Feuille : détail d'une recette ──
    Ouverte depuis un jour, le compteur de portions modifie ce jour-là ;
@@ -227,6 +282,8 @@ function openRecipe(id, { day } = {}) {
   if (!r) return;
   const base = r.servings || 4;
   let n = day ? (S().plan[day]?.s || base) : base;
+  const photo = photos.get(id);
+  const tags = tagsOf(r).map((t) => TAGS.find((x) => x.id === t)).filter(Boolean);
 
   openSheet(`
     <div class="sheet-head">
@@ -235,16 +292,25 @@ function openRecipe(id, { day } = {}) {
       <button class="head-btn" id="rd-edit">Modifier</button>
     </div>
     <div class="sheet-body">
+      ${photo ? `<div class="rd-photo"><img src="${photo}" alt=""></div>` : ""}
       <div class="rd-hero">
-        <span class="rd-emoji">${esc(r.emoji || "🍽️")}</span>
+        ${photo ? "" : `<span class="rd-emoji">${esc(r.emoji || "🍽️")}</span>`}
         <h2>${esc(r.name)}</h2>
-        <p>${r.time ? `${r.time} min` : ""}${day ? `${r.time ? " · " : ""}souper de ${dayName(day)}` : ""}</p>
+        <p>${[r.time ? `${r.time} min` : "", day ? `souper de ${dayName(day)}` : ""].filter(Boolean).join(" · ")}</p>
+        ${tags.length ? `<div class="rd-tags">${tags.map((t) => `<span class="chip">${t.emoji} ${t.label}</span>`).join("")}</div>` : ""}
+        <div class="stars" role="radiogroup" aria-label="Ma note">
+          ${[1, 2, 3, 4, 5].map((k) => `<button role="radio" data-star="${k}" aria-label="${k} étoile${k > 1 ? "s" : ""}">★</button>`).join("")}
+        </div>
       </div>
+      <button class="primary-btn wide cook-btn" id="rd-cook">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 13.5h12M7 13.5v4.5a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2v-4.5M9 10c0-1.5 1-1.5 1-3M13 10c0-1.5 1-1.5 1-3"/></svg>
+        Cuisiner
+      </button>
       <div class="rd-actions">
         ${day
           ? `<button class="ghost-btn" id="rd-swap">Changer</button>
              <button class="ghost-btn danger" id="rd-remove">Retirer</button>`
-          : `<button class="primary-btn" id="rd-plan">Planifier un soir</button>`}
+          : `<button class="ghost-btn" id="rd-plan">Planifier un soir</button>`}
       </div>
       <section class="rd-sec">
         <header class="rd-sec-head">
@@ -262,6 +328,11 @@ function openRecipe(id, { day } = {}) {
         <header class="rd-sec-head"><h3>Étapes</h3></header>
         <ol class="steps">${r.steps.map((s) => `<li>${esc(s)}</li>`).join("")}</ol>
       </section>` : ""}
+      <section class="rd-sec">
+        <header class="rd-sec-head"><h3>Mes notes</h3></header>
+        <textarea class="note-box" id="rd-note" rows="3" placeholder="Ex. moins de sel la prochaine fois, doubler la sauce…">${esc(r.note || "")}</textarea>
+      </section>
+      ${r.source ? `<a class="ghost-btn wide source-link" href="${esc(r.source)}" target="_blank" rel="noopener">Voir la vidéo d'origine ↗</a>` : ""}
     </div>`, (el) => {
     const draw = () => {
       $("#rd-n", el).textContent = portions(n);
@@ -273,6 +344,30 @@ function openRecipe(id, { day } = {}) {
       }).join("");
     };
     draw();
+
+    /* Étoiles : toucher la note actuelle l'efface. */
+    const drawStars = (k) => $$("[data-star]", el).forEach((b) => {
+      b.classList.toggle("on", +b.dataset.star <= k);
+      b.setAttribute("aria-checked", String(+b.dataset.star === k));
+    });
+    drawStars(r.rating || 0);
+    $(".stars", el).addEventListener("click", (e) => {
+      const b = e.target.closest("[data-star]");
+      if (!b) return;
+      const cur = S().recipes[id]; if (!cur) return;
+      const k = +b.dataset.star === (cur.rating || 0) ? 0 : +b.dataset.star;
+      store.set("recipes", id, { ...cur, rating: k || undefined });
+      drawStars(k); buzz(8); pop(b, 1.35, 0.45);
+    });
+
+    /* La note se garde en quittant le champ (pas à chaque lettre : la
+       synchro n'enverrait qu'une rafale de versions intermédiaires). */
+    $("#rd-note", el).addEventListener("change", (e) => {
+      const cur = S().recipes[id]; if (!cur) return;
+      store.set("recipes", id, { ...cur, note: e.target.value.trim() || undefined });
+      toast("Note enregistrée");
+    });
+
     const step = (d) => {
       n = Math.max(1, Math.min(MAX_PORTIONS, n + d));
       draw(); pop($("#rd-n", el), 1.08, 0.6);
@@ -281,6 +376,17 @@ function openRecipe(id, { day } = {}) {
     $("#rd-dec", el).addEventListener("click", () => step(-1));
     $("#rd-inc", el).addEventListener("click", () => step(1));
     $("#rd-edit", el).addEventListener("click", () => openEditor(id));
+    $("#rd-cook", el).addEventListener("click", () => {
+      closeSheet();
+      openCook(S().recipes[id], {
+        portions: n,
+        onRate: (k) => {
+          const cur = S().recipes[id]; if (!cur) return;
+          store.set("recipes", id, { ...cur, rating: k || undefined });
+          if (k) toast(`${starsText(k)} — noté !`);
+        },
+      });
+    });
     if (day) {
       $("#rd-swap", el).addEventListener("click", () => openPicker(day));
       $("#rd-remove", el).addEventListener("click", () => {
@@ -327,37 +433,106 @@ function openDayChooser(id) {
   });
 }
 
-/* ── Feuille : créer / modifier une recette ── */
-function openEditor(id, { planOn } = {}) {
-  const r = id ? S().recipes[id] : null;
+/* ── Feuille : importer depuis TikTok / Reels / un site ── */
+function openImport() {
   openSheet(`
     <div class="sheet-head">
       <button class="head-btn" data-close>Annuler</button>
-      <span class="sheet-title">${r ? "Modifier" : "Nouvelle recette"}</span>
+      <span class="sheet-title">Importer une recette</span>
+      <button class="head-btn strong" id="im-go" disabled>Suivant</button>
+    </div>
+    <div class="sheet-body">
+      <ol class="how">
+        <li>Dans TikTok ou Instagram, ouvre la description de la vidéo et <b>copie le texte</b>
+            (appui long → Copier). Tu peux aussi copier le lien, il sera gardé dans la recette.</li>
+        <li>Colle tout ici : Popote trouve le titre, les ingrédients et les étapes.</li>
+        <li>Tu vérifies dans l'éditeur, puis OK.</li>
+      </ol>
+      <button class="ghost-btn wide" id="im-paste">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="4" width="10" height="4" rx="1.5"/><path d="M8 6H6.5A1.5 1.5 0 0 0 5 7.5v11A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5v-11A1.5 1.5 0 0 0 17.5 6H16"/></svg>
+        Coller depuis le presse-papiers
+      </button>
+      <label class="field"><span>Texte de la recette</span>
+        <textarea id="im-text" rows="10" placeholder="Pâtes crémeuses au poulet 🍝&#10;Ingrédients :&#10;400 g de penne&#10;2 poitrines de poulet&#10;…&#10;Préparation :&#10;1. Cuire les pâtes…"></textarea>
+      </label>
+      <p class="note" id="im-hint"></p>
+    </div>`, (el) => {
+    const ta = $("#im-text", el), go = $("#im-go", el), hint = $("#im-hint", el);
+    const check = () => {
+      const v = ta.value.trim();
+      const onlyLink = /^https?:\/\/\S+$/.test(v);
+      go.disabled = !v || onlyLink;
+      if (onlyLink) {
+        hint.textContent = "Le lien seul ne suffit pas : TikTok et Instagram ne laissent pas lire la vidéo. Copie aussi le texte de la description.";
+      } else if (v) {
+        const d = parseRecipeText(v);
+        hint.textContent = `Trouvé : ${d.ingredients.length} ingrédient${d.ingredients.length > 1 ? "s" : ""}, ${d.steps.length} étape${d.steps.length > 1 ? "s" : ""}.`
+          + (d.ingredients.length ? "" : " Si la recette est seulement dite dans la vidéo, écris les ingrédients un par ligne.");
+      } else hint.textContent = "";
+    };
+    ta.addEventListener("input", check);
+    $("#im-paste", el).addEventListener("click", async () => {
+      try {
+        const t = await navigator.clipboard.readText();
+        if (t) { ta.value = ta.value ? `${ta.value}\n${t}` : t; check(); pop(ta, 1.02, 0.7); }
+      } catch (_) {
+        toast("Colle avec un appui long dans le champ");
+        ta.focus();
+      }
+    });
+    go.addEventListener("click", () => {
+      const d = parseRecipeText(ta.value);
+      openEditor(null, { draft: d });
+      toast("Vérifie ce qui a été trouvé, puis OK");
+    });
+  });
+}
+
+/* ── Feuille : créer / modifier une recette ──
+   draft = recette pré-remplie (import) pas encore enregistrée. */
+function openEditor(id, { planOn, draft } = {}) {
+  const r = id ? S().recipes[id] : null;
+  const src = r || draft || null;
+  let tags = new Set(r ? tagsOf(r) : []);
+  let photo = id ? photos.get(id) : "";
+
+  openSheet(`
+    <div class="sheet-head">
+      <button class="head-btn" data-close>Annuler</button>
+      <span class="sheet-title">${r ? "Modifier" : draft ? "Recette importée" : "Nouvelle recette"}</span>
       <button class="head-btn strong" id="ed-save">OK</button>
     </div>
     <div class="sheet-body editor">
+      <div class="photo-pick" id="ed-photo"></div>
       <div class="emoji-row">
-        <input id="ed-emoji" class="emoji-input" value="${esc(r?.emoji || "🍲")}" aria-label="Emoji" maxlength="8">
+        <input id="ed-emoji" class="emoji-input" value="${esc(src?.emoji || "🍲")}" aria-label="Emoji" maxlength="8">
         <div class="emoji-quick">${EMOJIS.map((e) => `<button type="button" data-e="${e}">${e}</button>`).join("")}</div>
       </div>
       <label class="field"><span>Nom</span>
-        <input id="ed-name" value="${esc(r?.name || "")}" placeholder="Ex. Soupe won-ton" autocomplete="off" ${r ? "" : "autofocus"}>
+        <input id="ed-name" value="${esc(src?.name || "")}" placeholder="Ex. Soupe won-ton" autocomplete="off" ${src ? "" : "autofocus"}>
       </label>
       <div class="field-row">
         <label class="field"><span>Portions</span>
-          <input id="ed-serv" type="number" inputmode="numeric" min="1" max="20" value="${r?.servings || 4}">
+          <input id="ed-serv" type="number" inputmode="numeric" min="1" max="20" value="${src?.servings || 4}">
         </label>
         <label class="field"><span>Temps (min)</span>
-          <input id="ed-time" type="number" inputmode="numeric" min="0" max="600" value="${r?.time || ""}" placeholder="30">
+          <input id="ed-time" type="number" inputmode="numeric" min="0" max="600" value="${src?.time || ""}" placeholder="30">
         </label>
       </div>
+      <div class="field"><span>Étiquettes</span>
+        <div class="filters wrap" id="ed-tags">${TAGS.map((t) =>
+          `<button type="button" class="fchip${tags.has(t.id) ? " on" : ""}" data-tag="${t.id}" aria-pressed="${tags.has(t.id)}">${t.emoji} ${t.label}</button>`).join("")}
+        </div>
+      </div>
       <label class="field"><span>Ingrédients <em>un par ligne</em></span>
-        <textarea id="ed-ing" rows="7" placeholder="400 g de poulet&#10;1 oignon&#10;2 c. à soupe d'huile d'olive">${esc((r?.ingredients || []).join("\n"))}</textarea>
+        <textarea id="ed-ing" rows="7" placeholder="400 g de poulet&#10;1 oignon&#10;2 c. à soupe d'huile d'olive">${esc((src?.ingredients || []).join("\n"))}</textarea>
       </label>
       <div class="ing-preview" id="ed-prev" aria-live="polite"></div>
       <label class="field"><span>Étapes <em>une par ligne</em></span>
-        <textarea id="ed-steps" rows="5" placeholder="Couper les légumes…">${esc((r?.steps || []).join("\n"))}</textarea>
+        <textarea id="ed-steps" rows="5" placeholder="Couper les légumes…">${esc((src?.steps || []).join("\n"))}</textarea>
+      </label>
+      <label class="field"><span>Lien de la vidéo <em>facultatif</em></span>
+        <input id="ed-src" type="url" inputmode="url" value="${esc(src?.source || "")}" placeholder="https://www.tiktok.com/…" autocomplete="off">
       </label>
       ${r ? `<button class="ghost-btn danger wide" id="ed-del">Supprimer la recette</button>` : ""}
     </div>`, (el) => {
@@ -378,6 +553,34 @@ function openEditor(id, { planOn } = {}) {
     name.addEventListener("input", validate);
     ing.addEventListener("input", preview);
 
+    /* Photo : prise sur le moment, ou une capture d'écran de la vidéo. */
+    const drawPhoto = () => {
+      $("#ed-photo", el).innerHTML = photo
+        ? `<img src="${photo}" alt=""><div class="photo-actions">
+             <label class="photo-btn">Changer<input type="file" accept="image/*" hidden></label>
+             <button type="button" class="photo-btn" id="ph-del">Retirer</button></div>`
+        : `<label class="photo-empty"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8.5A1.5 1.5 0 0 1 5.5 7h2l1.5-2h6l1.5 2h2A1.5 1.5 0 0 1 20 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 17.5z"/><circle cx="12" cy="12.5" r="3.5"/></svg>
+             Ajouter une photo<input type="file" accept="image/*" hidden></label>`;
+      $("#ed-photo input", el).addEventListener("change", async (e) => {
+        const f = e.target.files?.[0];
+        if (!f) return;
+        try { photo = await photos.compress(f); drawPhoto(); pop($("#ed-photo", el), 1.02, 0.7); }
+        catch (_) { toast("Impossible de lire cette image"); }
+      });
+      $("#ph-del", el)?.addEventListener("click", () => { photo = ""; drawPhoto(); });
+    };
+    drawPhoto();
+
+    $("#ed-tags", el).addEventListener("click", (e) => {
+      const b = e.target.closest("[data-tag]");
+      if (!b) return;
+      const t = b.dataset.tag;
+      tags.has(t) ? tags.delete(t) : tags.add(t);
+      b.classList.toggle("on", tags.has(t));
+      b.setAttribute("aria-pressed", String(tags.has(t)));
+      pop(b, 1.08, 0.55);
+    });
+
     $(".emoji-quick", el).addEventListener("click", (e) => {
       const b = e.target.closest("[data-e]");
       if (!b) return;
@@ -389,16 +592,20 @@ function openEditor(id, { planOn } = {}) {
       if (!name.value.trim()) return;
       const rid = r?.id || "r" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
       const recipe = {
+        ...(r || {}),
         id: rid,
         name: name.value.trim(),
-        emoji: [...$("#ed-emoji", el).value.trim()].slice(0, 2).join("") || "🍽️",
+        emoji: [...$("#ed-emoji", el).value.trim()].slice(0, 2).join("") || guessEmoji(name.value),
         servings: Math.max(1, Math.min(20, parseInt($("#ed-serv", el).value, 10) || 4)),
         time: Math.max(0, parseInt($("#ed-time", el).value, 10) || 0),
+        tags: TAGS.map((t) => t.id).filter((t) => tags.has(t)),
         ingredients: lines(ing.value),
         steps: lines($("#ed-steps", el).value),
+        source: /^https?:\/\//.test($("#ed-src", el).value.trim()) ? $("#ed-src", el).value.trim() : undefined,
         updated: Date.now(),
       };
       store.set("recipes", rid, recipe);
+      if (photo) photos.put(rid, photo); else photos.del(rid);
       if (planOn) { closeSheet(); planDay(planOn, rid); return; }
       openRecipe(rid);
       toast(r ? "Recette mise à jour" : "Recette ajoutée");
@@ -414,6 +621,26 @@ function openEditor(id, { planOn } = {}) {
 
 /* ══ Épicerie ═════════════════════════════════════════════════ */
 
+const X_ICON = `<svg viewBox="0 0 24 24"><path d="M7 7l10 10M17 7 7 17"/></svg>`;
+
+function groceryRow(it) {
+  return `
+    <div class="g-row${it.done ? " done" : ""}">
+      <button class="g-main" data-key="${esc(it.key)}" aria-pressed="${it.done}">
+        <span class="check" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg></span>
+        <span class="g-text">
+          <b>${esc(it.name)}</b>
+          ${it.from.length ? `<small>${esc(it.from.join(" · "))}</small>` : `<small>Ajouté à la main</small>`}
+        </span>
+      </button>
+      <button class="g-side" data-price="${esc(it.key)}" aria-label="Prix de ${esc(it.name)}">
+        <span class="g-qty">${esc(it.qtyText)}</span>
+        <span class="g-price${it.price === null ? " none" : ""}">${it.price === null ? "+ prix" : money(it.price)}</span>
+      </button>
+      ${it.extra ? `<button class="g-del" data-del="${it.extra}" aria-label="Retirer ${esc(it.name)}">${X_ICON}</button>` : ""}
+    </div>`;
+}
+
 function renderGrocery() {
   const g = groceryFor(S(), week);
   const left = g.total - g.done;
@@ -423,39 +650,52 @@ function renderGrocery() {
     : "";
   $("#groc-progress").hidden = !g.total;
   $("#groc-progress span").style.transform = `scaleX(${g.total ? g.done / g.total : 0})`;
-  $("#groc-foot").hidden = !g.total;
+  $("#groc-foot").hidden = !g.total && !g.pantry.length;
+
+  /* Budget : le total des prix connus ; on dit combien d'articles n'en ont pas. */
+  const bud = $("#groc-budget");
+  bud.hidden = !g.total;
+  bud.innerHTML = `<span>Budget estimé</span><b>≈ ${money(g.budget)}</b>` +
+    (g.unpriced ? `<small>${g.unpriced} article${g.unpriced > 1 ? "s" : ""} sans prix</small>` : `<small>tous les prix connus</small>`);
 
   const badge = $("#groc-badge");
   badge.hidden = !left || week.getTime() !== mondayOf(new Date()).getTime();
   badge.textContent = left > 99 ? "99+" : left;
 
-  $("#groc-list").innerHTML = g.groups.map((gr) => `
+  const main = g.groups.map((gr) => `
     <section class="aisle">
       <header class="aisle-head">
         <span>${gr.emoji} ${gr.name}</span>
         <small>${gr.items.filter((i) => i.done).length}/${gr.items.length}</small>
       </header>
-      <div class="aisle-card">
-        ${gr.items.map((it) => `
-          <div class="g-row${it.done ? " done" : ""}">
-            <button class="g-main" data-key="${esc(it.key)}" aria-pressed="${it.done}">
-              <span class="check" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg></span>
-              <span class="g-text">
-                <b>${esc(it.name)}</b>
-                ${it.from.length ? `<small>${esc(it.from.join(" · "))}</small>` : `<small>Ajouté à la main</small>`}
-              </span>
-              <span class="g-qty">${esc(it.qtyText)}</span>
-            </button>
-            ${it.extra ? `<button class="g-del" data-del="${it.extra}" aria-label="Retirer ${esc(it.name)}"><svg viewBox="0 0 24 24"><path d="M7 7l10 10M17 7 7 17"/></svg></button>` : ""}
-          </div>`).join("")}
-      </div>
-    </section>`).join("")
-    || `<div class="empty-state">
+      <div class="aisle-card">${gr.items.map(groceryRow).join("")}</div>
+    </section>`).join("");
+
+  /* Ce qu'on a toujours : replié, mais visible — rien ne disparaît en silence. */
+  const pantry = g.pantry.length ? `
+    <section class="aisle pantry${pantryOpen ? " open" : ""}">
+      <button class="aisle-head pantry-toggle" id="pantry-toggle" aria-expanded="${pantryOpen}">
+        <span>🏠 Déjà à la maison</span>
+        <small>${g.pantry.length} <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></small>
+      </button>
+      ${pantryOpen ? `<div class="aisle-card">${g.pantry.map((it) => `
+        <div class="g-row pantry-row">
+          <span class="g-main"><span class="g-text"><b>${esc(it.name)}</b><small>${esc(it.from.join(" · "))}</small></span></span>
+          <button class="ghost-mini" data-unpantry="${esc(it.k)}">Il en manque</button>
+        </div>`).join("")}</div>` : ""}
+    </section>` : "";
+
+  $("#groc-list").innerHTML = (main || (g.pantry.length ? "" : `<div class="empty-state">
           <span class="empty-emoji">🧺</span>
           <b>Ta liste est vide</b>
           <p>Planifie des soupers dans l'onglet Semaine : les ingrédients s'ajoutent ici tout seuls, additionnés et classés par rayon.</p>
-        </div>`;
+        </div>`)) + pantry;
 }
+
+const findItem = (key) => {
+  const g = groceryFor(S(), week);
+  return [...g.groups.flatMap((x) => x.items), ...g.pantry].find((i) => i.key === key);
+};
 
 $("#groc-list").addEventListener("click", (e) => {
   const del = e.target.closest("[data-del]");
@@ -463,6 +703,16 @@ $("#groc-list").addEventListener("click", (e) => {
     const id = del.dataset.del, prev = S().extras[id];
     store.apply([["extras", id, undefined], ["checked", `x|${id}`, undefined]]);
     toast("Article retiré", { action: "Annuler", onAction: () => store.set("extras", id, prev) });
+    return;
+  }
+  const price = e.target.closest("[data-price]");
+  if (price) { const it = findItem(price.dataset.price); if (it) openPrice(it); return; }
+  if (e.target.closest("#pantry-toggle")) { pantryOpen = !pantryOpen; renderGrocery(); return; }
+  const un = e.target.closest("[data-unpantry]");
+  if (un) {
+    const k = un.dataset.unpantry, prev = S().pantry[k];
+    store.set("pantry", k, undefined);
+    toast(`${prev?.name || "Article"} remis dans la liste`, { action: "Annuler", onAction: () => store.set("pantry", k, prev) });
     return;
   }
   const b = e.target.closest("[data-key]");
@@ -503,6 +753,109 @@ $("#groc-share").addEventListener("click", async () => {
     else { await navigator.clipboard.writeText(full); toast("Liste copiée"); }
   } catch (_) {}
 });
+
+$("#groc-pantry").addEventListener("click", () => openPantry());
+
+/* ── Feuille : prix d'un article ──
+   On demande le prix comme on le lit en magasin (au kilo, au litre,
+   à l'unité), et on le garde par unité de base. */
+function openPrice(it) {
+  const per = it.unit === "g" ? { label: "le kilo", k: 1000 }
+            : it.unit === "ml" ? { label: "le litre", k: 1000 }
+            : it.unit ? { label: `${/^(boîte|gousse|pincée|tranche|botte|c\. )/.test(it.unit) ? "la" : "le"} ${it.unit}`, k: 1 }
+            : { label: "l'unité", k: 1 };
+  const up = unitPrice(S(), it.k);
+  const cur = up && up.u === it.unit ? up.p * per.k : "";
+  const mine = !!S().prices[it.k];
+  openSheet(`
+    <div class="sheet-head">
+      <button class="head-btn" data-close>Annuler</button>
+      <span class="sheet-title">Prix</span>
+      <button class="head-btn strong" id="pr-save">OK</button>
+    </div>
+    <div class="sheet-body">
+      <p class="sheet-sub"><b>${esc(it.name[0].toUpperCase() + it.name.slice(1))}</b>${it.qtyText ? ` · ${esc(it.qtyText)} cette semaine` : ""}</p>
+      ${!it.hasQty && !it.unit ? `<p class="note">Pas de quantité dans la recette pour cet article : le prix sera compté une fois.</p>` : ""}
+      <label class="field price-field"><span>Prix pour ${per.label}</span>
+        <span class="money-input"><input id="pr-val" type="number" inputmode="decimal" step="0.01" min="0" value="${cur ? (Math.round(cur * 100) / 100) : ""}" placeholder="0,00" autofocus><b>$</b></span>
+      </label>
+      <p class="note" id="pr-est"></p>
+      ${up && !mine ? `<p class="note">Prix de départ approximatif — corrige-le avec ce que tu paies vraiment.</p>` : ""}
+      ${mine ? `<button class="ghost-btn danger wide" id="pr-clear">Revenir au prix par défaut</button>` : ""}
+    </div>`, (el) => {
+    const input = $("#pr-val", el);
+    const qty = it.hasQty ? it.qty : 1;
+    const est = () => {
+      const v = parseFloat(String(input.value).replace(",", "."));
+      $("#pr-est", el).textContent = v > 0 ? `Pour cette semaine : ≈ ${money((v / per.k) * qty)}` : "";
+    };
+    est();
+    input.addEventListener("input", est);
+    const save = () => {
+      const v = parseFloat(String(input.value).replace(",", "."));
+      if (!(v >= 0)) { closeSheet(); return; }
+      /* Un article sans quantité (« sel ») : prix à l'unité, quantité 1. */
+      const u = !it.hasQty && !it.unit ? "" : it.unit;
+      store.set("prices", it.k, { u, p: v / per.k });
+      closeSheet();
+      toast("Prix enregistré");
+    };
+    $("#pr-save", el).addEventListener("click", save);
+    input.addEventListener("keydown", (e) => { if (e.key === "Enter") save(); });
+    $("#pr-clear", el)?.addEventListener("click", () => { store.set("prices", it.k, undefined); closeSheet(); });
+  });
+}
+
+/* ── Feuille : garde-manger ──
+   Tout ce que la semaine demande, avec un interrupteur « J'en ai
+   toujours ». Les épices et huiles sont proposées d'un coup. */
+function openPantry() {
+  const draw = (el) => {
+    const g = groceryFor(S(), week);
+    const items = [...g.groups.flatMap((x) => x.items).filter((i) => !i.extra), ...g.pantry];
+    const seen = new Set();
+    const uniq = items.filter((i) => !seen.has(i.k) && seen.add(i.k))
+      .sort((a, b) => (b.pantry - a.pantry) || a.name.localeCompare(b.name, "fr"));
+    const others = Object.entries(S().pantry).filter(([k]) => !seen.has(k));
+    /* Épices et huiles au compte-gouttes seulement : la salsa ou le
+       sachet à tacos, on les achète pour la recette. */
+    const SMALL = new Set(["c. à soupe", "c. à thé", "pincée"]);
+    const staples = uniq.filter((i) => !i.pantry && i.aisle === "epices" && (SMALL.has(i.unit) || !i.hasQty));
+
+    $(".sheet-body", el).innerHTML = `
+      <p class="note">Ce que tu as toujours sous la main sort de la liste d'épicerie (tu le retrouves en bas, replié).</p>
+      ${staples.length ? `<button class="ghost-btn wide" id="pt-staples">🧂 Ajouter les épices et huiles de la semaine (${staples.length})</button>` : ""}
+      <div class="aisle-card pantry-list">
+        ${uniq.map((i) => `
+          <label class="toggle-row">
+            <span class="g-text"><b>${esc(i.name)}</b><small>${AISLES.find((a) => a.id === i.aisle).emoji} ${esc(i.from.join(" · "))}</small></span>
+            <input type="checkbox" class="switch" data-k="${esc(i.k)}" data-name="${esc(i.name)}" ${i.pantry ? "checked" : ""}>
+          </label>`).join("")}
+        ${others.map(([k, v]) => `
+          <label class="toggle-row">
+            <span class="g-text"><b>${esc(v.name)}</b><small>Pas cette semaine</small></span>
+            <input type="checkbox" class="switch" data-k="${esc(k)}" data-name="${esc(v.name)}" checked>
+          </label>`).join("")}
+      </div>
+      ${!uniq.length && !others.length ? `<p class="empty-note">Planifie des soupers pour voir leurs ingrédients ici.</p>` : ""}`;
+
+    $$(".switch", el).forEach((sw) => sw.addEventListener("change", () => {
+      store.set("pantry", sw.dataset.k, sw.checked ? { name: sw.dataset.name } : undefined);
+      buzz(6);
+    }));
+    $("#pt-staples", el)?.addEventListener("click", () => {
+      store.apply(staples.map((i) => ["pantry", i.k, { name: i.name }]));
+      buzz(10); draw(el);
+    });
+  };
+  openSheet(`
+    <div class="sheet-head">
+      <span class="head-btn" aria-hidden="true"></span>
+      <span class="sheet-title">Garde-manger</span>
+      <button class="head-btn strong" data-close>OK</button>
+    </div>
+    <div class="sheet-body"></div>`, draw);
+}
 
 /* ══ Partage et réglages ══════════════════════════════════════ */
 
@@ -563,7 +916,7 @@ function openSettings() {
       <h3 class="set-h">Données</h3>
       <button class="ghost-btn wide" id="set-starters">Remettre les recettes de départ</button>
       <button class="ghost-btn danger wide" id="set-erase">Tout effacer</button>
-      <p class="note center">Popote · v1</p>
+      <p class="note center">Popote · v2</p>
     </div>`, (el) => {
     renderPills(sync.getStatus());
     $("#set-create", el)?.addEventListener("click", async () => {
@@ -603,6 +956,8 @@ function openSettings() {
 
 function renderAll() { renderWeek(); renderRecipes(); renderGrocery(); }
 store.subscribe(renderAll);
+photos.onChange(renderAll);
+photos.loadAll();
 sync.onStatus(renderPills);
 
 /* Les coches des semaines de plus d'un mois ne servent plus à rien. */
