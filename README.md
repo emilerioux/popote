@@ -17,7 +17,7 @@ synchronisable à deux via Firebase (plan gratuit).
 
 ## Activer le partage (une seule fois)
 
-1. <https://console.firebase.google.com> → **Ajouter un projet** (nom : `popote`, Analytics désactivé).
+1. (Fait le 2026-09-27, projet `popote-62a15`.) <https://console.firebase.google.com> → **Ajouter un projet** (nom : `popote`, Analytics désactivé).
 2. **Créer → Firestore Database → Créer une base de données**, emplacement `northamerica-northeast1` (Montréal), mode **production**.
 3. Onglet **Règles** : coller le contenu de `firestore.rules`, **Publier**.
 4. **Paramètres du projet → Général → Vos applications → `</>` (Web)**, nom `popote`, pas de Hosting.

@@ -1068,7 +1068,7 @@ function openSettings() {
       <h3 class="set-h">Données</h3>
       <button class="ghost-btn wide" id="set-starters">Remettre les recettes de départ</button>
       <button class="ghost-btn danger wide" id="set-erase">Tout effacer</button>
-      <p class="note center">Popote · v5 · ${dictionarySize} ingrédients connus en anglais et en français</p>
+      <p class="note center">Popote · v6 · ${dictionarySize} ingrédients connus en anglais et en français</p>
     </div>`, (el) => {
     renderPills(sync.getStatus());
     $("#set-create", el)?.addEventListener("click", async () => {

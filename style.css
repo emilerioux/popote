@@ -416,7 +416,8 @@ code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: .9em; 
 .set-line { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 0; }
 .set-line + .set-line { border-top: .5px solid var(--hair); }
 .set-line span { color: var(--tx-2); }
-.code { font-size: .8125rem; letter-spacing: .04em; text-align: right; }
+.code { font-size: .75rem; letter-spacing: .02em; text-align: right; white-space: nowrap; }
+.set-line > span { flex: none; }
 .note { color: var(--tx-2); font-size: .875rem; margin: 10px 4px; }
 .note.center { text-align: center; color: var(--tx-3); margin-top: 24px; }
 .sheet .add-row { margin-top: 10px; }

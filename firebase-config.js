@@ -7,15 +7,13 @@
 
    Tant que c'est null, l'app fonctionne en solo (localStorage). */
 
-export const firebaseConfig = null;
-
-/* Exemple :
 export const firebaseConfig = {
-  apiKey: "AIza...",
-  authDomain: "popote-xxxx.firebaseapp.com",
-  projectId: "popote-xxxx",
-  storageBucket: "popote-xxxx.appspot.com",
-  messagingSenderId: "1234567890",
-  appId: "1:1234567890:web:abcdef",
+  apiKey: "AIzaSyB8B29kz8242s2hNvEV2B9K495tF5mM3fA",
+  authDomain: "popote-62a15.firebaseapp.com",
+  projectId: "popote-62a15",
+  storageBucket: "popote-62a15.firebasestorage.app",
+  messagingSenderId: "286968988815",
+  appId: "1:286968988815:web:b3ac5618d58776e9bcdcfa",
 };
-*/
+/* measurementId (Analytics) volontairement absent : l'app ne charge
+   pas Analytics, rien n'est suivi. */
