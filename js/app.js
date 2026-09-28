@@ -14,6 +14,9 @@ import { DAYS, mondayOf, addDays, iso, shortDate, parseLine, guessAisle, scaleLi
 import { dictionarySize } from "./lexicon.js";
 import { parseRecipeText } from "./import.js";
 import { openCook } from "./cook.js";
+import { readImages } from "./ocr.js";
+import { openShop } from "./shop.js";
+import { renderBilan } from "./bilan.js";
 import { pop, buzz } from "./motion.js";
 import { openSheet, closeSheet, toast, esc } from "./ui.js";
 
@@ -70,6 +73,7 @@ function showTab(t, { focus = false } = {}) {
     } else if (!on) p.hidden = true;
   }
   for (const b of $$(".tab")) b.setAttribute("aria-current", b.dataset.tab === t ? "page" : "false");
+  if (t === "bilan") renderBilanTab();
   if (focus) $(`#page-${t} .page-scroll`).scrollTo({ top: 0, behavior: "smooth" });
 }
 
@@ -114,9 +118,14 @@ function renderWeek() {
       : `<button class="meal empty" data-pick="${key}">
            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Choisir un souper
          </button>`;
-    return `<div class="day${key === today ? " today" : ""}" data-day="${key}" aria-label="${name}">${head}${body}</div>`;
+    return `<div class="day${key === today ? " today" : key < today ? " past" : ""}" data-day="${key}" aria-label="${name}">${head}${body}</div>`;
   }).join("");
 
+  const planned = 7 - empty;
+  const g = planned ? groceryFor(S(), week) : null;
+  $("#week-sum").innerHTML = planned
+    ? `<b>${planned}</b> souper${planned > 1 ? "s" : ""} sur 7${g.budget ? ` · épicerie ≈ <b>${money(g.budget)}</b>` : ""}`
+    : "Aucun souper planifié";
   $("#fill-week").hidden = empty === 0 || recipeList().length === 0;
 }
 
@@ -256,12 +265,12 @@ function renderRecipes() {
   for (let i = 0; i < 7; i++) { const p = S().plan[iso(addDays(mondayOf(new Date()), i))]; if (p) planned.add(p.r); }
   $("#rec-list").innerHTML = rs.map((r) => `
     <button class="rec-card" data-id="${r.id}">
-      ${thumb(r, "rec-emoji")}
-      <span class="meal-main">
+      ${thumb(r, "rec-thumb")}
+      ${planned.has(r.id) ? `<span class="rec-badge">Cette semaine</span>` : ""}
+      <span class="rec-info">
         <b>${esc(r.name)}</b>
         <small>${metaLine(r)}</small>
       </span>
-      ${planned.has(r.id) ? `<span class="chip">Cette semaine</span>` : ""}
     </button>`).join("")
     || `<p class="empty-note">${recQuery || recFilter ? "Aucune recette ne correspond." : "Aucune recette pour l'instant."}</p>`;
 }
@@ -449,15 +458,23 @@ function openImport() {
     </div>
     <div class="sheet-body">
       <ol class="how">
-        <li>Dans TikTok ou Instagram, ouvre la description de la vidéo et <b>copie le texte</b>
-            (appui long → Copier). Tu peux aussi copier le lien, il sera gardé dans la recette.</li>
-        <li>Colle tout ici : Popote trouve le titre, les ingrédients et les étapes.</li>
+        <li>Dans TikTok ou Instagram, ouvre la description de la vidéo : <b>copie le texte</b>
+            (appui long → Copier), ou <b>fais une capture d'écran</b> si on ne peut pas le copier.</li>
+        <li>Colle le texte ou choisis tes captures : Popote trouve le titre, les ingrédients et les étapes.</li>
         <li>Tu vérifies dans l'éditeur, puis OK.</li>
       </ol>
-      <button class="ghost-btn wide" id="im-paste">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="4" width="10" height="4" rx="1.5"/><path d="M8 6H6.5A1.5 1.5 0 0 0 5 7.5v11A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5v-11A1.5 1.5 0 0 0 17.5 6H16"/></svg>
-        Coller depuis le presse-papiers
-      </button>
+      <div class="import-src">
+        <button class="ghost-btn" id="im-paste">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="4" width="10" height="4" rx="1.5"/><path d="M8 6H6.5A1.5 1.5 0 0 0 5 7.5v11A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5v-11A1.5 1.5 0 0 0 17.5 6H16"/></svg>
+          Coller le texte
+        </button>
+        <label class="ghost-btn" id="im-shot">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="3" width="12" height="18" rx="2.5"/><path d="M10 7.5h4M9.5 12.5l1.8 1.8 3.2-3.6"/></svg>
+          Capture d'écran
+          <input type="file" accept="image/*" multiple hidden>
+        </label>
+      </div>
+      <div class="ocr-bar" id="im-ocr" hidden><span></span><i></i></div>
       <label class="field"><span>Texte de la recette</span>
         <textarea id="im-text" rows="10" placeholder="Pâtes crémeuses au poulet 🍝&#10;Ingrédients :&#10;400 g de penne&#10;2 poitrines de poulet&#10;…&#10;Préparation :&#10;1. Cuire les pâtes…"></textarea>
       </label>
@@ -486,6 +503,34 @@ function openImport() {
         ta.focus();
       }
     });
+    /* Captures : lues sur le téléphone même, ajoutées au texte pour
+       qu'on voie (et corrige) ce qui a été lu avant de continuer. */
+    const shot = $("#im-shot input", el), bar = $("#im-ocr", el);
+    shot.addEventListener("change", async () => {
+      const files = [...shot.files];
+      shot.value = "";
+      if (!files.length) return;
+      $("#im-shot", el).classList.add("busy");
+      bar.hidden = false;
+      const show = (p, label) => {
+        $("span", bar).textContent = p > 0 && p < 1 ? `${label} · ${Math.round(p * 100)} %` : label;
+        $("i", bar).style.transform = `scaleX(${p})`;
+      };
+      show(0, "Chargement du lecteur de texte");
+      try {
+        const text = await readImages(files, show);
+        if (!text) { toast("Aucun texte trouvé sur cette image"); return; }
+        ta.value = ta.value.trim() ? `${ta.value.trim()}\n\n${text}` : text;
+        check(); pop(ta, 1.02, 0.7); buzz(10);
+        toast("Texte lu — vérifie-le avant de continuer");
+      } catch (err) {
+        toast(err.message === "offline" ? "Il faut Internet la première fois" : "Impossible de lire cette image");
+      } finally {
+        bar.hidden = true;
+        $("#im-shot", el)?.classList.remove("busy");
+      }
+    });
+
     go.addEventListener("click", () => {
       const d = parseRecipeText(ta.value);
       openEditor(null, { draft: d });
@@ -652,17 +697,20 @@ function renderGrocery() {
   const left = g.total - g.done;
   const rel = weekRel(week).toLowerCase();
   $("#groc-sub").textContent = g.total
-    ? `${rel[0].toUpperCase() + rel.slice(1)} · ${g.meals} souper${g.meals > 1 ? "s" : ""} · ${left ? `${left} à prendre` : "tout est pris 🎉"}`
+    ? `${rel[0].toUpperCase() + rel.slice(1)} · ${g.meals} souper${g.meals > 1 ? "s" : ""}`
     : "";
-  $("#groc-progress").hidden = !g.total;
-  $("#groc-progress span").style.transform = `scaleX(${g.total ? g.done / g.total : 0})`;
   $("#groc-foot").hidden = !g.total && !g.pantry.length;
+  $("#groc-hero").hidden = !g.total;
+  $("#groc-shop").hidden = !left;
 
-  /* Budget : le total des prix connus ; on dit combien d'articles n'en ont pas. */
-  const bud = $("#groc-budget");
-  bud.hidden = !g.total;
-  bud.innerHTML = `<span>Budget estimé</span><b>≈ ${money(g.budget)}</b>` +
-    (g.unpriced ? `<small>${g.unpriced} article${g.unpriced > 1 ? "s" : ""} sans prix</small>` : `<small>tous les prix connus</small>`);
+  /* Résumé : l'anneau avance avec les coches ; le budget = les prix
+     connus, et on dit combien d'articles n'en ont pas. */
+  $("#groc-hero .ring-fill").style.strokeDasharray = `${g.total ? (g.done / g.total) * 100 : 0} 100`;
+  $("#groc-hero .ring-fill").classList.toggle("zero", !g.done);
+  $("#hero-left").textContent = left ? `${left} à prendre` : "Tout est pris";
+  $("#hero-left-sub").textContent = `${g.done} sur ${g.total} dans le panier`;
+  $("#groc-budget").innerHTML = `<small>Budget estimé</small><b>≈ ${money(g.budget)}</b>` +
+    (g.unpriced ? `<small>${g.unpriced} sans prix</small>` : `<small>tous les prix connus</small>`);
 
   const badge = $("#groc-badge");
   badge.hidden = !left || week.getTime() !== mondayOf(new Date()).getTime();
@@ -761,6 +809,7 @@ $("#groc-share").addEventListener("click", async () => {
 });
 
 $("#groc-pantry").addEventListener("click", () => openPantry());
+$("#groc-shop").addEventListener("click", () => openShop(() => groceryFor(S(), week)));
 
 /* ── Feuille : un article de la liste ──
    Deux choses qu'on y fait :
@@ -929,6 +978,21 @@ function openPantry() {
     <div class="sheet-body"></div>`, draw);
 }
 
+/* ══ Bilan ════════════════════════════════════════════════════ */
+
+let bilanAll = false;
+function renderBilanTab() {
+  if (tab !== "bilan") return;
+  renderBilan($("#bilan"), S(), { thumb, showAll: bilanAll });
+}
+$("#bilan").addEventListener("click", (e) => {
+  const rec = e.target.closest("[data-recipe]");
+  if (rec) return openRecipe(rec.dataset.recipe);
+  const plan = e.target.closest("[data-plan]");
+  if (plan) { week = mondayOf(new Date()); renderWeek(); return openDayChooser(plan.dataset.plan); }
+  if (e.target.closest("#bl-more")) { bilanAll = true; renderBilanTab(); }
+});
+
 /* ══ Partage et réglages ══════════════════════════════════════ */
 
 const STATUS = {
@@ -1004,7 +1068,7 @@ function openSettings() {
       <h3 class="set-h">Données</h3>
       <button class="ghost-btn wide" id="set-starters">Remettre les recettes de départ</button>
       <button class="ghost-btn danger wide" id="set-erase">Tout effacer</button>
-      <p class="note center">Popote · v4 · ${dictionarySize} ingrédients connus en anglais et en français</p>
+      <p class="note center">Popote · v5 · ${dictionarySize} ingrédients connus en anglais et en français</p>
     </div>`, (el) => {
     renderPills(sync.getStatus());
     $("#set-create", el)?.addEventListener("click", async () => {
@@ -1052,7 +1116,7 @@ function openSettings() {
 
 /* ══ Démarrage ════════════════════════════════════════════════ */
 
-function renderAll() { setAliases(S().aliases); renderWeek(); renderRecipes(); renderGrocery(); }
+function renderAll() { setAliases(S().aliases); renderWeek(); renderRecipes(); renderGrocery(); renderBilanTab(); }
 store.subscribe(renderAll);
 photos.onChange(renderAll);
 photos.loadAll();
@@ -1068,7 +1132,7 @@ function pruneChecks() {
 }
 
 renderAll();
-showTab(["semaine", "recettes", "epicerie"].includes(tab) ? tab : "semaine");
+showTab(["semaine", "recettes", "epicerie", "bilan"].includes(tab) ? tab : "semaine");
 
 /* Lien d'invitation : ?foyer=CODE */
 const invited = new URLSearchParams(location.search).get("foyer");

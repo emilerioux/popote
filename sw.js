@@ -1,15 +1,15 @@
 /* Popote — service worker.
    Bumper VERSION à CHAQUE déploiement, sinon le téléphone garde
    l'ancienne version en cache. */
-const VERSION = "v4";
+const VERSION = "v5";
 const CACHE_NAME = `popote-${VERSION}`;
 const RUNTIME = "popote-cdn";   // SDK Firebase, gardé pour le hors-ligne
 
 const ASSETS = [
   "./",
   "./index.html",
-  "./style.css?v=4",
-  "./js/app.js?v=4",
+  "./style.css?v=5",
+  "./js/app.js?v=5",
   "./js/data.js",
   "./js/store.js",
   "./js/sync.js",
@@ -20,6 +20,9 @@ const ASSETS = [
   "./js/photos.js",
   "./js/lexicon.js",
   "./js/lexicon-data.js",
+  "./js/ocr.js",
+  "./js/shop.js",
+  "./js/bilan.js",
   "./firebase-config.js",
   "./manifest.json",
   "./icons/icon-192.png",
@@ -48,7 +51,9 @@ self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== "GET") return;
 
-  if (url.hostname === "www.gstatic.com" && url.pathname.startsWith("/firebasejs/")) {
+  /* Le lecteur de captures (Tesseract) aussi : versionné, cache d'abord. */
+  if ((url.hostname === "www.gstatic.com" && url.pathname.startsWith("/firebasejs/")) ||
+      (url.hostname === "cdn.jsdelivr.net" && /@\d/.test(url.pathname))) {
     e.respondWith(caches.open(RUNTIME).then(async (c) => {
       const hit = await c.match(e.request);
       if (hit) return hit;

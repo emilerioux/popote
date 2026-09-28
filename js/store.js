@@ -47,6 +47,7 @@ function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catc
 function emit() { save(); for (const f of listeners) f(state); }
 
 export const subscribe = (fn) => listeners.add(fn);
+export const unsubscribe = (fn) => listeners.delete(fn);
 export const setPushHook = (fn) => { pushHook = fn; };
 export const snapshot = () => JSON.parse(JSON.stringify(state));
 
